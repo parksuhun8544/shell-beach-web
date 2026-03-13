@@ -24,6 +24,8 @@ const ROOMS = [
   { id: 'Pine', name: 'Pine (파인)', color: 'bg-emerald-50 text-emerald-700 border-emerald-100', dot: 'bg-emerald-500' }
 ];
 
+const PATHS = ['직접', '네이버펜션', '네이버플레이스', '네이버지도', '여기어때', '떠나요', '홈페이지'];
+
 const INITIAL_DATA = [
   { date: '2026-01-01', room: 'Shell', name: '염준돈', phone: null, path: '여기어때', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-01-01', room: 'Pine', name: '손미향', phone: null, path: '떠나요', nights: 1, price: 220000, adults: 0, kids: 0 },
@@ -109,6 +111,7 @@ const INITIAL_DATA = [
   { date: '2026-05-24', room: 'Beach', name: '이현자', phone: null, path: '여기어때', nights: 1, price: 300000, adults: 0, kids: 0 },
   { date: '2026-07-13', room: 'Pine', name: '천정봉', phone: null, path: '여기어때', nights: 1, price: 300000, adults: 0, kids: 0 },
 ];
+
 // --- 2. 파이어베이스 설정 ---
 const firebaseConfig = {
   apiKey: "AIzaSyBaJNGRJJJxgW6eKsvloW8dAOK3afXBke8",
@@ -360,6 +363,13 @@ export default function App() {
           <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">연락처</label>
           <input type="tel" placeholder="010-0000-0000" value={formatPhone(formData.phone)} onChange={handlePhoneChange} className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm" />
         </div>
+        {/* ── [수정1] 예약 경로 select 추가 ── */}
+        <div className="flex flex-col">
+          <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">예약 경로</label>
+          <select value={formData.path} onChange={e => setFormData({ ...formData, path: e.target.value })} className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm">
+            {PATHS.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
       </div>
 
       <div className="bg-slate-50 p-4 rounded-2xl space-y-3">
@@ -418,7 +428,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ─── 데스크탑 사이드바 (md 이상만) ─── */}
+      {/* ─── 데스크탑 사이드바 ─── */}
       <nav className="hidden md:flex w-60 border-r border-slate-200 flex-col p-5 space-y-2 bg-white shadow-xl z-20 shrink-0">
         <div className="p-6 bg-blue-600 text-white rounded-[1.5rem] mb-4 shadow-xl">
           <BedDouble size={24} className="mb-3" />
@@ -438,7 +448,6 @@ export default function App() {
       </nav>
 
       {/* ─── 메인 콘텐츠 ─── */}
-      {/* 모바일: pb-20 으로 하단탭바 공간 확보 / 데스크탑: overflow-auto */}
       <main className="flex-1 overflow-auto relative bg-slate-50 pb-20 md:pb-0">
         {loading && (
           <div className="absolute inset-0 z-50 bg-white/60 backdrop-blur-sm flex items-center justify-center font-black text-slate-400 text-sm tracking-widest uppercase">
@@ -527,7 +536,8 @@ export default function App() {
                       </div>
                       <div>
                         <p className="text-lg font-black text-slate-800">{r.name}님 <span className="text-[11px] font-bold text-blue-500 ml-2 px-2 py-0.5 bg-blue-50 rounded-md uppercase">{r.room}</span></p>
-                        <p className="text-slate-500 font-bold mt-0.5 text-xs">{r.date} 입실 • {r.nights}박</p>
+                        {/* ── [수정3] 검색탭 경로 표시 ── */}
+                        <p className="text-slate-500 font-bold mt-0.5 text-xs">{r.date} 입실 • {r.nights}박 • {r.path || '-'}</p>
                         {r.phone && (
                           <a href={`tel:${r.phone}`} className="inline-flex items-center gap-1.5 mt-1.5 text-blue-600 font-bold hover:underline bg-blue-50 px-3 py-1 rounded-full text-[11px]">
                             <Phone size={11} /> {formatPhone(r.phone)}
@@ -543,7 +553,6 @@ export default function App() {
                 )) : <div className="p-20 text-center text-slate-400 font-bold text-sm bg-white rounded-2xl border-2 border-dashed">검색 결과가 없습니다.</div>}
               </div>
 
-              {/* 모바일 데이터 초기화 버튼 */}
               <div className="md:hidden pt-4">
                 <button onClick={resetData} className="w-full flex items-center justify-center gap-2 p-4 rounded-2xl font-bold text-rose-500 bg-rose-50 border border-rose-100">
                   <RefreshCw size={16} /> 데이터 초기화
@@ -597,7 +606,7 @@ export default function App() {
         </div>
       </main>
 
-      {/* ─── 모바일 하단 탭바 (md 미만만) ─── */}
+      {/* ─── 모바일 하단 탭바 ─── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 flex items-center justify-around px-2 py-1 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
         {NAV_ITEMS.map(item => (
           <button key={item.id} onClick={() => setActiveTab(item.id)}
@@ -631,6 +640,8 @@ export default function App() {
                           </a>
                         )}
                         <span>{r.adults}성인 / {r.kids}아동 / {r.nights}박</span>
+                        {/* ── [수정2] 모달 경로 표시 ── */}
+                        {r.path && <span className="text-slate-500 bg-white/60 px-2 py-0.5 rounded-full">{r.path}</span>}
                       </div>
                     </div>
                     <button onClick={() => handleDelete(r.id)} className="text-rose-500 p-2.5 bg-white/60 rounded-xl hover:bg-rose-500 hover:text-white transition-all"><Trash2 size={18} /></button>
