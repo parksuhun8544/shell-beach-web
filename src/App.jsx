@@ -24,7 +24,7 @@ const ROOMS = [
   { id: 'Pine', name: 'Pine (파인)', color: 'bg-emerald-50 text-emerald-700 border-emerald-100', dot: 'bg-emerald-500' }
 ];
 
-// CSV 데이터 기반 2026년 통합 예약 리스트
+// CSV 데이터 기반 2026년 통합 예약 리스트 (사용자 업로드 파일 반영)
 const INITIAL_DATA = [
   // 1월
   { date: '2026-01-01', room: 'Shell', name: '염준돈', path: '여기어때', nights: 1, price: 120000 },
@@ -101,7 +101,7 @@ const INITIAL_DATA = [
   { date: '2026-07-14', room: 'Pine', name: '천정봉', path: '여기어때', nights: 1, price: 300000 }
 ];
 
-// --- 2. 파이어베이스 초기화 ---
+// --- 2. 파이어베이스 초기화 (사용자 설정 필수) ---
 const firebaseConfig = {
   apiKey: "본인의_정보를_입력하세요",
   authDomain: "본인의_정보를_입력하세요",
@@ -135,16 +135,16 @@ export default function App() {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('calendar'); 
-  const [viewDate, setViewDate] = useState(new Date(2026, 0, 1)); // 2026년 1월 기준 시작
+  const [viewDate, setViewDate] = useState(new Date(2026, 0, 1)); 
   const [message, setMessage] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  
   const [formData, setFormData] = useState({
     date: getLocalTodayStr(), room: 'Shell', name: '', phone: '', 
     adults: 0, kids: 0, bbq: false, nights: 1, memo: '', path: '직접'
   });
 
-  // 1. 보안 해제
   useEffect(() => {
     if (sessionStorage.getItem('shellBeachUnlocked') === 'true') setIsUnlocked(true);
   }, []);
@@ -160,7 +160,6 @@ export default function App() {
     }
   };
 
-  // 2. 인증 및 초기 데이터 주입
   useEffect(() => {
     if (!isUnlocked) return;
     if (firebaseConfig.apiKey.includes("본인")) { setLoading(false); return; }
@@ -169,11 +168,9 @@ export default function App() {
       try {
         const currentUser = (await signInAnonymously(auth)).user;
         setUser(currentUser);
-
         const colRef = collection(db, 'reservations');
         const snap = await getDocs(colRef);
         
-        // DB가 비어있을 경우에만 2026년 대량 데이터 주입 (Batch 사용)
         if (snap.empty) {
           const batch = writeBatch(db);
           INITIAL_DATA.forEach(data => {
@@ -181,7 +178,7 @@ export default function App() {
             batch.set(newDocRef, { ...data, createdAt: serverTimestamp() });
           });
           await batch.commit();
-          showMsg("2026년 예약 데이터가 성공적으로 로드되었습니다.", "success");
+          showMsg("초기 데이터가 성공적으로 주입되었습니다.", "success");
         }
       } catch (error) { console.error(error); }
     };
@@ -190,17 +187,18 @@ export default function App() {
     return () => unsubscribe();
   }, [isUnlocked]);
 
-  // 3. 실시간 동기화
   useEffect(() => {
     if (!isUnlocked || !user || firebaseConfig.apiKey.includes("본인")) return;
     const unsubscribe = onSnapshot(collection(db, 'reservations'), (snap) => {
       setReservations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setLoading(false);
+    }, (err) => {
+      console.error(err);
+      setLoading(false);
     });
     return () => unsubscribe();
   }, [user, isUnlocked]);
 
-  // 데이터 가공
   const reservationMap = useMemo(() => {
     const map = {};
     reservations.forEach(res => {
@@ -228,7 +226,7 @@ export default function App() {
         const [y, m] = r.date.split('-');
         if (y === '2026') {
           const mIdx = Number(m) - 1;
-          if (monthlyRoomStats[mIdx] && r.room) {
+          if (mIdx >= 0 && mIdx < 12 && r.room && monthlyRoomStats[mIdx][r.room] !== undefined) {
             monthlyRoomStats[mIdx][r.room] += price;
             monthlyRoomStats[mIdx].total += price;
           }
@@ -239,7 +237,7 @@ export default function App() {
   }, [reservations]);
 
   const totalPrice = useMemo(() => {
-    if (!formData.date) return 0;
+    if (!formData.date || !formData.room) return 0;
     const [y, m, d] = formData.date.split('-');
     const start = new Date(Number(y), Number(m)-1, Number(d));
     const isHigh = start.getMonth() >= 6 && start.getMonth() <= 7;
@@ -248,10 +246,18 @@ export default function App() {
         const curr = new Date(start);
         curr.setDate(start.getDate() + i);
         const rates = isHigh ? PRICING.high[formData.room] : PRICING.low[formData.room];
+        if (!rates) continue;
         total += rates[curr.getDay() === 5 || curr.getDay() === 6 ? 1 : 0];
     }
     return total + ((formData.adults * 20000) + (formData.kids * 15000)) * formData.nights + (formData.bbq ? 30000 : 0);
   }, [formData]);
+
+  const filteredReservations = useMemo(() => {
+    if (!searchTerm) return reservations;
+    return reservations.filter(r => 
+      (r.name?.includes(searchTerm)) || (r.phone?.includes(searchTerm))
+    );
+  }, [reservations, searchTerm]);
 
   const showMsg = (text, type) => {
     setMessage({ text, type });
@@ -264,6 +270,7 @@ export default function App() {
       await addDoc(collection(db, 'reservations'), { ...formData, price: totalPrice, createdAt: serverTimestamp() });
       showMsg("저장 완료", "success");
       setIsModalOpen(false);
+      setActiveTab('calendar');
     } catch (e) { showMsg("실패", "error"); }
   };
 
@@ -274,17 +281,53 @@ export default function App() {
   };
 
   const resetData = async () => {
-    if (!window.confirm("모든 데이터를 지우고 2026년 기본 데이터로 초기화하시겠습니까?")) return;
-    const colRef = collection(db, 'reservations');
-    const snap = await getDocs(colRef);
-    const batch = writeBatch(db);
-    snap.docs.forEach(d => batch.delete(d.ref));
-    INITIAL_DATA.forEach(data => batch.set(doc(colRef), { ...data, createdAt: serverTimestamp() }));
-    await batch.commit();
-    showMsg("데이터가 초기화되었습니다.", "success");
+    if (!window.confirm("기존 데이터를 모두 삭제하고 2026년 전체 데이터로 강제 초기화하시겠습니까?")) return;
+    try {
+      setLoading(true);
+      const colRef = collection(db, 'reservations');
+      const snap = await getDocs(colRef);
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      INITIAL_DATA.forEach(data => batch.set(doc(colRef), { ...data, createdAt: serverTimestamp() }));
+      await batch.commit();
+      showMsg("데이터가 초기화되었습니다.", "success");
+    } catch (err) {
+      showMsg("초기화 실패", "error");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // --- UI 구성 ---
+  const renderReservationForm = (isModal = false) => (
+    <form onSubmit={handleSave} className="space-y-6">
+      <div className="grid grid-cols-3 gap-2">
+        {ROOMS.map(r => (
+          <button key={r.id} type="button" onClick={() => setFormData({...formData, room: r.id})} 
+            className={`p-4 rounded-2xl font-black border-2 transition-all ${formData.room === r.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-500'}`}>
+            {r.name}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {!isModal && (
+          <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="p-4 bg-slate-50 rounded-2xl font-bold outline-none" required />
+        )}
+        <select value={formData.nights} onChange={e => setFormData({...formData, nights: Number(e.target.value)})} className="p-4 bg-slate-50 rounded-2xl font-bold outline-none">
+          {[1,2,3,4,5,6,7].map(n => <option key={n} value={n}>{n}박 숙박</option>)}
+        </select>
+        <input type="text" placeholder="예약자 성함" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="p-4 bg-slate-50 rounded-2xl font-bold outline-none" required />
+        <input type="tel" placeholder="연락처 (가운데/뒷자리 8자)" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="p-4 bg-slate-50 rounded-2xl font-bold outline-none" />
+      </div>
+      <div className="bg-blue-50 p-6 rounded-3xl flex justify-between items-center">
+        <div>
+          <p className="text-xs text-blue-600 font-bold">결제 금액</p>
+          <p className="text-3xl font-black">₩{totalPrice.toLocaleString()}</p>
+        </div>
+        <button type="submit" className="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg">예약 확정</button>
+      </div>
+    </form>
+  );
+
   if (!isUnlocked) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-sm bg-white p-10 rounded-[2.5rem] shadow-2xl text-center">
@@ -298,7 +341,7 @@ export default function App() {
     </div>
   );
 
-  if (loading) return <div className="h-screen flex items-center justify-center font-black text-slate-400">데이터 로드 중...</div>;
+  if (loading) return <div className="h-screen flex items-center justify-center font-black text-slate-400">데이터 실시간 동기화 중...</div>;
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-slate-50 overflow-hidden font-sans">
@@ -309,19 +352,24 @@ export default function App() {
           <BedDouble size={32} className="mb-4" />
           <h1 className="font-black text-2xl uppercase">Shell<br/>Beach</h1>
         </div>
-        {['calendar', 'add', 'search', 'stats'].map(id => (
-          <button key={id} onClick={() => setActiveTab(id)} className={`flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${activeTab === id ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
-            {id === 'calendar' && <Calendar size={20}/>}
-            {id === 'add' && <PlusCircle size={20}/>}
-            {id === 'search' && <Search size={20}/>}
-            {id === 'stats' && <BarChart3 size={20}/>}
-            <span className="capitalize">{id === 'calendar' ? '현황판' : id === 'add' ? '등록' : id === 'search' ? '검색' : '통계'}</span>
+        {[
+          { id: 'calendar', icon: Calendar, label: '현황판' },
+          { id: 'add', icon: PlusCircle, label: '등록' },
+          { id: 'search', icon: Search, label: '검색' },
+          { id: 'stats', icon: BarChart3, label: '통계' }
+        ].map(item => (
+          <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${activeTab === item.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-100'}`}>
+            <item.icon size={20}/>
+            <span>{item.label}</span>
           </button>
         ))}
-        <button onClick={resetData} className="mt-auto flex items-center gap-4 p-4 rounded-2xl font-bold text-rose-500 hover:bg-rose-50 transition-all"><RefreshCw size={20}/> 데이터 초기화</button>
+        <button onClick={resetData} className="mt-auto flex items-center gap-4 p-4 rounded-2xl font-bold text-rose-500 hover:bg-rose-50 transition-all">
+          <RefreshCw size={20}/> 데이터 초기화
+        </button>
       </nav>
 
       <main className="flex-1 overflow-auto p-4 md:p-8">
+        {/* 현황판 탭 */}
         {activeTab === 'calendar' && (
           <div className="max-w-[1400px] mx-auto space-y-6">
             <header className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
@@ -332,7 +380,6 @@ export default function App() {
                 <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))} className="p-2 hover:bg-white rounded-xl"><ChevronRight/></button>
               </div>
             </header>
-            
             <div className="grid grid-cols-7 bg-white rounded-[2rem] shadow-xl overflow-hidden border border-slate-200">
               {['일','월','화','수','목','금','토'].map((d, i) => (
                 <div key={d} className={`p-4 text-center text-xs font-black bg-slate-50 border-b border-slate-100 ${i === 0 ? 'text-rose-500' : i === 6 ? 'text-blue-500' : 'text-slate-400'}`}>{d}</div>
@@ -343,7 +390,6 @@ export default function App() {
                 const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
                 const dateStr = day > 0 && day <= daysInMonth ? `${viewDate.getFullYear()}-${String(viewDate.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : null;
                 const dayRes = dateStr ? (reservationMap[dateStr] || []) : [];
-                
                 return (
                   <div key={i} onClick={() => dateStr && (setFormData({...formData, date: dateStr}), setIsModalOpen(true))} className={`min-h-[120px] p-2 md:p-4 border-r border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors ${!dateStr ? 'bg-slate-50/30' : ''}`}>
                     {dateStr && (
@@ -351,7 +397,7 @@ export default function App() {
                         <span className={`text-lg font-black ${new Date(dateStr).getDay() === 0 ? 'text-rose-500' : new Date(dateStr).getDay() === 6 ? 'text-blue-500' : 'text-slate-600'}`}>{day}</span>
                         <div className="mt-2 space-y-1">
                           {dayRes.map((r, idx) => (
-                            <div key={idx} className={`text-[10px] p-1.5 rounded-lg border font-bold truncate ${ROOMS.find(rm => rm.id === r.room)?.color}`}>
+                            <div key={idx} className={`text-[10px] p-1.5 rounded-lg border font-bold truncate ${ROOMS.find(rm => rm.id === r.room)?.color || 'bg-slate-100'}`}>
                               {r.name}
                             </div>
                           ))}
@@ -365,25 +411,63 @@ export default function App() {
           </div>
         )}
 
+        {/* 등록 탭 */}
+        {activeTab === 'add' && (
+          <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-bottom-4">
+             <div className="bg-white p-10 rounded-[2.5rem] shadow-xl border border-slate-200">
+                <h2 className="text-3xl font-black mb-8 border-b pb-6">신규 예약 등록</h2>
+                {renderReservationForm(false)}
+             </div>
+          </div>
+        )}
+
+        {/* 검색 탭 */}
+        {activeTab === 'search' && (
+          <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-bottom-4">
+            <h2 className="text-3xl font-black">예약 내역 검색</h2>
+            <div className="relative">
+              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={24} />
+              <input type="text" placeholder="예약자 이름 또는 연락처 뒷자리 검색..." className="w-full p-6 pl-16 bg-white border border-slate-200 rounded-3xl shadow-sm text-xl font-bold outline-none focus:ring-2 ring-blue-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            </div>
+            <div className="space-y-4">
+              {filteredReservations.length > 0 ? (
+                filteredReservations.map(r => (
+                  <div key={r.id} className="bg-white p-8 rounded-3xl border border-slate-100 flex justify-between items-center hover:shadow-md transition-shadow">
+                    <div>
+                      <p className="text-2xl font-black">{r.name}님 <span className="text-sm font-bold text-slate-400 border-l ml-3 pl-3">{r.room}</span></p>
+                      <p className="text-slate-500 font-bold mt-1">{r.date} | {r.nights}박 | {displayPhone(r.phone)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-black text-blue-600">₩{(Number(r.price)||0).toLocaleString()}</p>
+                      <button onClick={() => handleDelete(r.id)} className="mt-2 text-rose-500 font-bold text-sm hover:underline">예약 삭제</button>
+                    </div>
+                  </div>
+                ))
+              ) : <div className="p-20 text-center text-slate-400 font-bold text-lg bg-white rounded-3xl border-2 border-dashed">검색 결과가 없습니다.</div>}
+            </div>
+          </div>
+        )}
+
+        {/* 통계 탭 */}
         {activeTab === 'stats' && (
           <div className="max-w-6xl mx-auto space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-slate-900 p-8 rounded-3xl text-white">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+              <div className="bg-slate-900 p-10 rounded-[2.5rem] text-white">
                 <p className="text-blue-300 font-bold text-sm">2026 누적 매출</p>
                 <p className="text-4xl font-black mt-2">₩{stats.revenue.toLocaleString()}</p>
               </div>
-              <div className="bg-white p-8 rounded-3xl border border-slate-200">
-                <p className="text-slate-500 font-bold text-sm">총 예약</p>
+              <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200">
+                <p className="text-slate-500 font-bold text-sm">총 예약 건수</p>
                 <p className="text-4xl font-black mt-2">{stats.count}건</p>
               </div>
             </div>
-            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 overflow-x-auto">
-              <h4 className="font-black text-xl mb-6">월별 상세 매출 내역</h4>
+            <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 overflow-x-auto">
+              <h4 className="font-black text-xl mb-6">월별 상세 매출 요약</h4>
               <table className="w-full text-left min-w-[600px]">
                 <thead><tr className="border-b-2 text-slate-400 text-sm"><th className="py-4">월</th><th>Shell</th><th>Beach</th><th>Pine</th><th>합계</th></tr></thead>
                 <tbody>
                   {stats.monthlyRoomStats.map((s, i) => (
-                    <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
+                    <tr key={i} className={`border-b border-slate-50 hover:bg-slate-50 ${s.total === 0 ? 'opacity-20' : ''}`}>
                       <td className="py-4 font-bold">{i+1}월</td>
                       <td>₩{s.Shell.toLocaleString()}</td>
                       <td>₩{s.Beach.toLocaleString()}</td>
@@ -398,31 +482,27 @@ export default function App() {
         )}
       </main>
 
+      {/* 모달 팝업 */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}>
           <div className="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 md:p-10 relative overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
             <button onClick={() => setIsModalOpen(false)} className="absolute top-6 right-6 p-2 bg-slate-100 rounded-full"><X/></button>
             <h3 className="text-2xl font-black mb-1">{formData.date} 현황</h3>
-            <p className="text-blue-600 font-bold mb-8">예약 내역 및 등록</p>
-            
+            <p className="text-blue-600 font-bold mb-8">상세 내역</p>
             <div className="mb-10 space-y-3">
-              {(reservationMap[formData.date] || []).map((r, i) => (
-                <div key={i} className={`p-4 rounded-2xl border flex justify-between items-center ${ROOMS.find(rm => rm.id === r.room)?.color}`}>
-                  <span className="font-black">{r.room} | {r.name}님</span>
-                  <button onClick={() => handleDelete(r.id)} className="text-rose-500 p-2 hover:bg-rose-100 rounded-xl"><Trash2 size={18}/></button>
-                </div>
-              ))}
+              {(reservationMap[formData.date] || []).length > 0 ? (
+                reservationMap[formData.date].map((r, i) => (
+                  <div key={i} className={`p-4 rounded-2xl border flex justify-between items-center ${ROOMS.find(rm => rm.id === r.room)?.color || 'bg-slate-50'}`}>
+                    <span className="font-black">{r.room} | {r.name}님</span>
+                    <button onClick={() => handleDelete(r.id)} className="text-rose-500 p-2 hover:bg-rose-100 rounded-xl"><Trash2 size={18}/></button>
+                  </div>
+                ))
+              ) : <p className="text-center p-8 bg-slate-50 rounded-2xl text-slate-400 font-bold">등록된 예약이 없습니다.</p>}
             </div>
-
-            <form onSubmit={handleSave} className="space-y-4 pt-6 border-t">
-              <div className="grid grid-cols-3 gap-2">
-                {ROOMS.map(r => (
-                  <button key={r.id} type="button" onClick={() => setFormData({...formData, room: r.id})} className={`p-3 rounded-xl font-bold border-2 ${formData.room === r.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white'}`}>{r.name}</button>
-                ))}
-              </div>
-              <input type="text" placeholder="예약자 성함" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold border-none outline-none focus:ring-2 ring-blue-500" required />
-              <button type="submit" className="w-full p-5 bg-slate-900 text-white font-black rounded-2xl shadow-xl">예약 확정 (₩{totalPrice.toLocaleString()})</button>
-            </form>
+            <div className="pt-8 border-t">
+              <h4 className="font-black text-lg mb-6 text-blue-600">이 날짜에 새 예약 추가</h4>
+              {renderReservationForm(true)}
+            </div>
           </div>
         </div>
       )}
