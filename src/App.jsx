@@ -20,23 +20,18 @@ const HOLIDAYS = new Set([
   '2026-09-24','2026-09-25','2026-09-26',
   '2026-10-03','2026-10-05','2026-10-09','2026-12-25',
 ]);
-const addDays = (dateStr, n) => {
+const isWeekendPrice = (dateStr) => {
   const [y,m,d] = dateStr.split('-').map(Number);
-  const dt = new Date(y, m-1, d+n);
-  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
-};
-const isNextDayOff = (dateStr) => {
-  const nxt = addDays(dateStr, 1);
-  const [y,m,d] = nxt.split('-').map(Number);
-  const w = new Date(y, m-1, d).getDay();
-  return w === 0 || w === 6 || HOLIDAYS.has(nxt);
+  const nxt = new Date(y, m-1, d+1);
+  const w = nxt.getDay();
+  return w === 0 || w === 6;
 };
 const getPricePerNight = (room, dateStr) => {
   const [y,m,d] = dateStr.split('-').map(Number);
   const dow = new Date(y, m-1, d).getDay();
   if ((m === 7 && d >= 15) || (m === 8 && d <= 15))
     return { Shell:140000, Beach:300000, Pine:450000 }[room];
-  const isWk = isNextDayOff(dateStr);
+  const isWk = isWeekendPrice(dateStr);
   const isFri = dow === 5;
   if (m <= 4) {
     const r = { Shell:[100000,120000], Beach:[180000,220000], Pine:[220000,400000] };
@@ -49,7 +44,6 @@ const getPricePerNight = (room, dateStr) => {
   if (m === 7 && d <= 14) {
     if (room === 'Shell') return isWk ? 140000 : 120000;
     if (room === 'Pine')  return isWk ? 450000 : 300000;
-    // Beach: 주말(다음날휴일)=30만, 금요일(다음날평일)=25만, 나머지=22만
     if (isWk) return 300000;
     if (isFri) return 250000;
     return 220000;
@@ -307,9 +301,9 @@ export default function App() {
     if (!formData.date || !formData.room) return 0;
     let total = 0;
     for (let i = 0; i < formData.nights; i++) {
-      const d = new Date(formData.date + 'T00:00:00');
-      d.setDate(d.getDate() + i);
-      const ds = d.toISOString().slice(0,10);
+      const [y,m,d] = formData.date.split('-').map(Number);
+      const nd = new Date(y, m-1, d+i);
+      const ds = `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}-${String(nd.getDate()).padStart(2,'0')}`;
       total += getPricePerNight(formData.room, ds);
     }
     const guestCharges = (formData.adults * 20000) + (formData.kids * 15000);
