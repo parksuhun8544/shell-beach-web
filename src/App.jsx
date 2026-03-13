@@ -2,14 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, addDoc, onSnapshot, 
-  serverTimestamp, deleteDoc, doc, getDocs, writeBatch, updateDoc
+  serverTimestamp, deleteDoc, doc, updateDoc, getDocs, writeBatch
 } from 'firebase/firestore';
 import { 
   getAuth, signInAnonymously, onAuthStateChanged 
 } from 'firebase/auth';
 import { 
   Calendar, PlusCircle, BarChart3, ChevronLeft, 
-  ChevronRight, BedDouble, X, TrendingUp, Users, Wallet, Trash2, Search, Check, TableProperties, Lock, RefreshCw, AlertTriangle, Phone, ExternalLink
+  ChevronRight, BedDouble, X, TrendingUp, Users, Wallet, Trash2, Search, Check, TableProperties, Lock, AlertTriangle, Phone, ExternalLink
 } from 'lucide-react';
 
 // --- 1. 환경 설정 및 상수 ---
@@ -337,18 +337,6 @@ export default function App() {
     showMsg("삭제 완료", "success");
   };
 
-  const resetData = async () => {
-    if (!window.confirm("주의: 모든 데이터를 지우고 초기 데이터로 초기화하시겠습니까?")) return;
-    setLoading(true);
-    const colRef = collection(db, 'reservations');
-    const snap = await getDocs(colRef);
-    const batch = writeBatch(db);
-    snap.docs.forEach(d => batch.delete(d.ref));
-    INITIAL_DATA.forEach(data => batch.set(doc(colRef), { ...data, createdAt: serverTimestamp() }));
-    await batch.commit();
-    showMsg("데이터 초기화 완료", "success");
-    setLoading(false);
-  };
 
   const handlePhoneChange = (e) => {
     let val = e.target.value.replace(/[^0-9]/g, '');
@@ -473,9 +461,7 @@ export default function App() {
             <span className="text-sm">{item.label}</span>
           </button>
         ))}
-        <button onClick={resetData} className="mt-auto flex items-center gap-3 p-3.5 rounded-xl font-bold text-rose-500 hover:bg-rose-50 transition-all">
-          <RefreshCw size={18} /> <span className="text-sm">데이터 초기화</span>
-        </button>
+
       </nav>
 
       {/* ─── 메인 콘텐츠 ─── */}
@@ -494,7 +480,13 @@ export default function App() {
               <header className="flex flex-col md:flex-row justify-between items-center bg-white p-4 md:p-5 rounded-[1.5rem] shadow-sm border border-slate-200">
                 <div className="flex items-center gap-3">
                   <div className="bg-blue-50 p-2.5 rounded-xl text-blue-600"><Calendar size={20} /></div>
-                  <h2 className="text-xl font-black text-slate-800">{viewDate.getFullYear()}년 {viewDate.getMonth() + 1}월</h2>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-800">{viewDate.getFullYear()}년 {viewDate.getMonth() + 1}월</h2>
+                    <p className="text-sm font-black text-blue-600 mt-0.5">
+                      ₩{(stats.monthlyRoomStats[viewDate.getMonth()]?.total || 0).toLocaleString()}
+                      <span className="text-slate-400 font-bold text-xs ml-1">월 매출</span>
+                    </p>
+                  </div>
                 </div>
                 <div className="flex gap-1.5 bg-slate-100 p-1.5 rounded-xl mt-3 md:mt-0">
                   <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))} className="p-1.5 hover:bg-white rounded-lg shadow-sm"><ChevronLeft size={18} /></button>
@@ -588,9 +580,7 @@ export default function App() {
               </div>
 
               <div className="md:hidden pt-4">
-                <button onClick={resetData} className="w-full flex items-center justify-center gap-2 p-4 rounded-2xl font-bold text-rose-500 bg-rose-50 border border-rose-100">
-                  <RefreshCw size={16} /> 데이터 초기화
-                </button>
+
               </div>
             </div>
           )}
