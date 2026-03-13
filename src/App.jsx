@@ -359,6 +359,26 @@ export default function App() {
     showMsg("삭제 완료", "success");
   };
 
+  const migrateAllPrices = async () => {
+    if (!window.confirm(`전체 ${reservations.length}건 가격을 현재 요금표 기준으로 재계산합니다.`)) return;
+    setLoading(true);
+    const batch = writeBatch(db);
+    reservations.forEach(r => {
+      if (!r.date || !r.room || !r.nights) return;
+      const [fy,fm,fd] = r.date.split('-').map(Number);
+      let newPrice = 0;
+      for (let i = 0; i < r.nights; i++) {
+        const nd = new Date(fy, fm-1, fd+i);
+        const ds = `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}-${String(nd.getDate()).padStart(2,'0')}`;
+        newPrice += getPricePerNight(r.room, ds);
+      }
+      batch.update(doc(db, 'reservations', r.id), { price: newPrice });
+    });
+    await batch.commit();
+    showMsg(`${reservations.length}건 가격 업데이트 완료`, 'success');
+    setLoading(false);
+  };
+
 
   const handlePhoneChange = (e) => {
     let val = e.target.value.replace(/[^0-9]/g, '');
@@ -483,6 +503,10 @@ export default function App() {
             <span className="text-sm">{item.label}</span>
           </button>
         ))}
+        <button onClick={migrateAllPrices} className="mt-auto flex items-center gap-3 p-3.5 rounded-xl font-bold text-amber-600 hover:bg-amber-50 transition-all">
+          <TrendingUp size={18} />
+          <span className="text-sm">가격 일괄 재계산</span>
+        </button>
 
       </nav>
 
