@@ -259,16 +259,8 @@ export default function App() {
     return map;
   }, [reservations]);
 
-  const isRoomFull = (roomType, startDate, nights) => {
-    const [y, m, d] = startDate.split('-');
-    const start = new Date(Number(y), Number(m) - 1, Number(d));
-    for (let i = 0; i < nights; i++) {
-      const current = new Date(start);
-      current.setDate(start.getDate() + i);
-      const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
-      if (reservationMap[dateStr]?.some(r => r.room === roomType)) return true;
-    }
-    return false;
+  const isRoomFull = (roomType, dateStr, excludeId = null) => {
+    return reservationMap[dateStr]?.some(r => r.room === roomType && r.id !== excludeId) ?? false;
   };
 
   const stats = useMemo(() => {
@@ -313,7 +305,17 @@ export default function App() {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!editTarget && isRoomFull(formData.room, formData.date, formData.nights)) {
+    // 신규 예약 시 nights 전체 날짜 체크
+    const isAnyNightFull = () => {
+      const [fy,fm,fd] = formData.date.split('-').map(Number);
+      for (let i = 0; i < formData.nights; i++) {
+        const nd = new Date(fy, fm-1, fd+i);
+        const ds = `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}-${String(nd.getDate()).padStart(2,'0')}`;
+        if (isRoomFull(formData.room, ds, editTarget)) return true;
+      }
+      return false;
+    };
+    if (isAnyNightFull()) {
       showMsg("해당 기간에 이미 예약된 객실입니다.", "error");
       return;
     }
@@ -348,7 +350,7 @@ export default function App() {
     <form onSubmit={handleSave} className="space-y-4">
       <div className="grid grid-cols-3 gap-2">
         {ROOMS.map(r => {
-          const full = isRoomFull(r.id, formData.date, formData.nights);
+          const full = isRoomFull(r.id, formData.date, editTarget);
           return (
             <button key={r.id} type="button" disabled={full} onClick={() => setFormData({ ...formData, room: r.id })}
               className={`p-3 rounded-xl font-black border-2 transition-all flex flex-col items-center justify-center
