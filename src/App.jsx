@@ -277,7 +277,7 @@ export default function App() {
     }
     const guestCharges = (formData.adults * 20000) + (formData.kids * 15000);
     const bbqCharge = formData.bbq ? 30000 : 0;
-    return total + (guestCharges * formData.nights) + bbqCharge;
+    return total + guestCharges + bbqCharge; // 추가요금(인원/BBQ)은 연박과 무관하게 1회만
   }, [formData]);
 
   const filteredReservations = useMemo(() => {
