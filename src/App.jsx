@@ -13,9 +13,29 @@ import {
 } from 'lucide-react';
 
 // --- 1. 환경 설정 및 상수 ---
+const HOLIDAYS = new Set([
+  '2026-01-01',
+  '2026-01-28','2026-01-29','2026-01-30',
+  '2026-03-01','2026-03-02',
+  '2026-05-05',
+  '2026-05-25',
+  '2026-06-06','2026-06-08',
+  '2026-08-15','2026-08-17',
+  '2026-09-24','2026-09-25','2026-09-26','2026-09-28',
+  '2026-10-03','2026-10-05',
+  '2026-10-09',
+  '2026-12-25',
+]);
+const isDayOff = (dateStr) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const dow = d.getDay();
+  return dow === 0 || dow === 6 || HOLIDAYS.has(dateStr);
+};
 const isWeekendPrice = (dateStr) => {
   const [y,m,d] = dateStr.split('-').map(Number);
-  return new Date(y, m-1, d).getDay() === 6; // 토요일만
+  const nxt = new Date(y, m-1, d+1);
+  const ns = `${nxt.getFullYear()}-${String(nxt.getMonth()+1).padStart(2,'0')}-${String(nxt.getDate()).padStart(2,'0')}`;
+  return isDayOff(ns);
 };
 const isFriday = (dateStr) => {
   const [y,m,d] = dateStr.split('-').map(Number);
@@ -25,25 +45,25 @@ const getPricePerNight = (room, dateStr) => {
   const [y,m,d] = dateStr.split('-').map(Number);
   if ((m === 7 && d >= 15) || (m === 8 && d <= 15))
     return { Shell:140000, Beach:300000, Pine:450000 }[room];
-  const sat = isWeekendPrice(dateStr);
+  const wk = isWeekendPrice(dateStr);
   const fri = isFriday(dateStr);
   if (m <= 4) {
     const r = { Shell:[100000,120000], Beach:[180000,220000], Pine:[220000,400000] };
-    return r[room][sat ? 1 : 0];
+    return r[room][wk ? 1 : 0];
   }
   if (m <= 6) {
     const r = { Shell:[120000,140000], Beach:[220000,300000], Pine:[250000,450000] };
-    return r[room][sat ? 1 : 0];
+    return r[room][wk ? 1 : 0];
   }
   if (m === 7 && d <= 14) {
-    if (room === 'Shell') return sat ? 140000 : 120000;
-    if (room === 'Pine')  return sat ? 450000 : 300000;
-    if (sat) return 300000;
+    if (room === 'Shell') return wk ? 140000 : 120000;
+    if (room === 'Pine')  return wk ? 450000 : 300000;
+    if (wk) return 300000;
     if (fri) return 250000;
     return 220000;
   }
   const r = { Shell:[120000,140000], Beach:[220000,250000], Pine:[250000,450000] };
-  return r[room][sat ? 1 : 0];
+  return r[room][wk ? 1 : 0];
 };
 
 const ROOMS = [
@@ -57,7 +77,7 @@ const PATHS = ['직접', '네이버펜션', '네이버플레이스', '네이버�
 const INITIAL_DATA = [
   { date: '2026-01-01', room: 'Shell', name: '염준돈', phone: null, path: '여기어때', nights: 1, price: 100000, adults: 0, kids: 0 },
   { date: '2026-01-01', room: 'Pine', name: '손미향', phone: null, path: '떠나요', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-01-02', room: 'Pine', name: '박정아', phone: '01068882804', path: '네이버펜션', nights: 2, price: 620000, adults: 0, kids: 0 },
+  { date: '2026-01-02', room: 'Pine', name: '박정아', phone: '01068882804', path: '네이버펜션', nights: 2, price: 800000, adults: 0, kids: 0 },
   { date: '2026-01-03', room: 'Shell', name: '이태훈', phone: null, path: '떠나요', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-01-03', room: 'Beach', name: '임정아', phone: '01036780953', path: '네이버플레이스', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-01-03', room: 'Pine', name: '박정아', phone: '01068882804', path: '네이버펜션', nights: 1, price: 400000, adults: 0, kids: 0 },
@@ -65,11 +85,11 @@ const INITIAL_DATA = [
   { date: '2026-01-10', room: 'Pine', name: '정희나', phone: null, path: '여기어때', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-01-11', room: 'Pine', name: '김지호', phone: '01086615843', path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-01-11', room: 'Beach', name: '허소영', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
-  { date: '2026-01-16', room: 'Beach', name: '류희철', phone: '01090107758', path: '네이버지도', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-01-16', room: 'Beach', name: '류희철', phone: '01090107758', path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-01-17', room: 'Shell', name: '신원균', phone: '01056345527', path: '네이버지도', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-01-17', room: 'Pine', name: '민경복', phone: null, path: '떠나요', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-01-22', room: 'Beach', name: '최미선', phone: null, path: '여기어때', nights: 2, price: 360000, adults: 0, kids: 0 },
-  { date: '2026-01-23', room: 'Beach', name: '최미선', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-01-22', room: 'Beach', name: '최미선', phone: null, path: '여기어때', nights: 2, price: 400000, adults: 0, kids: 0 },
+  { date: '2026-01-23', room: 'Beach', name: '최미선', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-01-24', room: 'Shell', name: '이지', phone: null, path: '여기어때', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-01-24', room: 'Pine', name: '김현정', phone: null, path: '여기어때', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-01-24', room: 'Beach', name: '이하은', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
@@ -78,7 +98,7 @@ const INITIAL_DATA = [
   { date: '2026-01-31', room: 'Beach', name: '김태진', phone: '01094984844', path: '홈페이지', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-01-31', room: 'Pine', name: '김혜영', phone: '01041796875', path: '네이버지도', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-01-31', room: 'Shell', name: '이광혁', phone: null, path: '여기어때', nights: 1, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-02-06', room: 'Pine', name: '박세진', phone: '01027593827', path: '네이버플레이스', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-02-06', room: 'Pine', name: '박세진', phone: '01027593827', path: '네이버플레이스', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-02-07', room: 'Pine', name: '박진웅', phone: null, path: '떠나요', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-02-07', room: 'Shell', name: '고명현', phone: null, path: '떠나요', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-02-07', room: 'Beach', name: '강보미', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
@@ -95,12 +115,12 @@ const INITIAL_DATA = [
   { date: '2026-02-18', room: 'Beach', name: '이서연', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
   { date: '2026-02-21', room: 'Beach', name: '황보라', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-02-22', room: 'Pine', name: '황진혁', phone: '01038890176', path: '네이버지도', nights: 1, price: 0, adults: 0, kids: 0 },
-  { date: '2026-02-27', room: 'Shell', name: '류현진', phone: null, path: '네이버펜션', nights: 1, price: 100000, adults: 0, kids: 0 },
+  { date: '2026-02-27', room: 'Shell', name: '류현진', phone: null, path: '네이버펜션', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-02-28', room: 'Pine', name: '김태희', phone: null, path: '여기어때', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-02-28', room: 'Shell', name: '이민호', phone: null, path: '여기어때', nights: 2, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-02-28', room: 'Shell', name: '이민호', phone: null, path: '여기어때', nights: 2, price: 240000, adults: 0, kids: 0 },
   { date: '2026-02-28', room: 'Beach', name: '박소연', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-03-01', room: 'Beach', name: '정호영', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
-  { date: '2026-03-01', room: 'Shell', name: '김나연', phone: null, path: '여기어때', nights: 1, price: 100000, adults: 0, kids: 0 },
+  { date: '2026-03-01', room: 'Beach', name: '정호영', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-03-01', room: 'Shell', name: '김나연', phone: null, path: '여기어때', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-03-07', room: 'Shell', name: '최준혁', phone: null, path: '네이버지도', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-03-07', room: 'Beach', name: '이유진', phone: null, path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-03-07', room: 'Pine', name: '박지수', phone: null, path: '네이버지도', nights: 1, price: 400000, adults: 0, kids: 0 },
@@ -112,31 +132,31 @@ const INITIAL_DATA = [
   { date: '2026-03-28', room: 'Shell', name: '김민재', phone: null, path: '네이버펜션', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-04-02', room: 'Beach', name: '최단비', phone: null, path: '직접', nights: 1, price: 180000, adults: 0, kids: 0 },
   { date: '2026-04-02', room: 'Pine', name: '최단비', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-04-03', room: 'Pine', name: '최단비', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-04-03', room: 'Pine', name: '최단비', phone: null, path: '직접', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-04-04', room: 'Pine', name: '정재열', phone: null, path: '직접', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-04-04', room: 'Beach', name: '김광주', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-04-12', room: 'Pine', name: '엄마지인', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-04-13', room: 'Pine', name: '엄마지인', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-04-17', room: 'Beach', name: '김두헌', phone: null, path: '직접', nights: 1, price: 180000, adults: 0, kids: 0 },
-  { date: '2026-04-17', room: 'Pine', name: '이현희', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-04-17', room: 'Beach', name: '김두헌', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-04-17', room: 'Pine', name: '이현희', phone: null, path: '직접', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-04-18', room: 'Beach', name: '이현희', phone: null, path: '직접', nights: 1, price: 0, adults: 0, kids: 0 },
   { date: '2026-04-18', room: 'Pine', name: '이현희', phone: null, path: '직접', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-04-24', room: 'Beach', name: '김은영', phone: null, path: '네이버지도', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-04-24', room: 'Beach', name: '김은영', phone: null, path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-04-25', room: 'Beach', name: '김유정', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-04-25', room: 'Pine', name: '김광주', phone: null, path: '직접', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-05-01', room: 'Shell', name: '김미선', phone: null, path: '여기어때', nights: 1, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-05-01', room: 'Pine', name: '정재열', phone: null, path: '직접', nights: 1, price: 250000, adults: 0, kids: 0 },
+  { date: '2026-05-01', room: 'Shell', name: '김미선', phone: null, path: '여기어때', nights: 1, price: 140000, adults: 0, kids: 0 },
+  { date: '2026-05-01', room: 'Pine', name: '정재열', phone: null, path: '직접', nights: 1, price: 450000, adults: 0, kids: 0 },
   { date: '2026-05-02', room: 'Shell', name: '박인희', phone: null, path: '여기어때', nights: 1, price: 140000, adults: 0, kids: 0 },
   { date: '2026-05-02', room: 'Pine', name: '김해숙', phone: null, path: '직접', nights: 1, price: 450000, adults: 0, kids: 0 },
   { date: '2026-05-02', room: 'Beach', name: '김태연', phone: null, path: '여기어때', nights: 1, price: 300000, adults: 0, kids: 0 },
   { date: '2026-05-03', room: 'Beach', name: '이현자', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-05-15', room: 'Beach', name: '김민지', phone: null, path: '네이버펜션', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-05-15', room: 'Beach', name: '김민지', phone: null, path: '네이버펜션', nights: 1, price: 300000, adults: 0, kids: 0 },
   { date: '2026-05-16', room: 'Beach', name: '이수빈', phone: null, path: '네이버지도', nights: 1, price: 300000, adults: 0, kids: 0 },
   { date: '2026-05-17', room: 'Pine', name: '박준영', phone: null, path: '여기어때', nights: 1, price: 250000, adults: 0, kids: 0 },
   { date: '2026-05-23', room: 'Pine', name: '최예린', phone: null, path: '여기어때', nights: 1, price: 450000, adults: 0, kids: 0 },
   { date: '2026-05-23', room: 'Beach', name: '강하늘', phone: null, path: '네이버지도', nights: 1, price: 300000, adults: 0, kids: 0 },
-  { date: '2026-05-24', room: 'Pine', name: '정우성', phone: null, path: '여기어때', nights: 1, price: 250000, adults: 0, kids: 0 },
-  { date: '2026-05-24', room: 'Beach', name: '김혜수', phone: null, path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-05-24', room: 'Pine', name: '정우성', phone: null, path: '여기어때', nights: 1, price: 450000, adults: 0, kids: 0 },
+  { date: '2026-05-24', room: 'Beach', name: '김혜수', phone: null, path: '네이버지도', nights: 1, price: 300000, adults: 0, kids: 0 },
   { date: '2026-07-13', room: 'Pine', name: '이준호', phone: null, path: '네이버펜션', nights: 1, price: 300000, adults: 0, kids: 0 },
 ];
 
