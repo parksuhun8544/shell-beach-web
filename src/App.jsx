@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, collection, addDoc, onSnapshot, 
-  serverTimestamp, deleteDoc, doc, getDocs, writeBatch
+  serverTimestamp, deleteDoc, doc, getDocs, writeBatch, updateDoc
 } from 'firebase/firestore';
 import { 
   getAuth, signInAnonymously, onAuthStateChanged 
@@ -13,9 +13,42 @@ import {
 } from 'lucide-react';
 
 // --- 1. 환경 설정 및 상수 ---
-const PRICING = {
-  low: { Shell: [100000, 120000], Beach: [180000, 220000], Pine: [220000, 400000] },
-  high: { Shell: [120000, 140000], Beach: [220000, 250000], Pine: [250000, 450000] }
+const HOLIDAYS = new Set([
+  '2026-01-01','2026-01-28','2026-01-29','2026-01-30',
+  '2026-03-01','2026-05-05','2026-05-25','2026-06-06',
+  '2026-08-15','2026-08-17',
+  '2026-09-24','2026-09-25','2026-09-26',
+  '2026-10-03','2026-10-05','2026-10-09','2026-12-25',
+]);
+const isNextDayOff = (dateStr) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const nxt = new Date(d); nxt.setDate(d.getDate() + 1);
+  const nxtStr = nxt.toISOString().slice(0,10);
+  const w = nxt.getDay();
+  return w === 0 || w === 6 || HOLIDAYS.has(nxtStr);
+};
+const getPricePerNight = (room, dateStr) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const m = d.getMonth() + 1, day = d.getDate(), dow = d.getDay();
+  if ((m === 7 && day >= 15) || (m === 8 && day <= 15))
+    return { Shell:140000, Beach:300000, Pine:450000 }[room];
+  const isWk = isNextDayOff(dateStr);
+  const isFri = dow === 5;
+  if (m <= 4) {
+    const r = { Shell:[100000,120000], Beach:[180000,220000], Pine:[220000,400000] };
+    return r[room][isWk ? 1 : 0];
+  }
+  if (m <= 6) {
+    const r = { Shell:[120000,140000], Beach:[220000,300000], Pine:[250000,450000] };
+    return r[room][isWk ? 1 : 0];
+  }
+  if (m === 7 && day <= 14) {
+    if (room === 'Shell') return isWk ? 140000 : 120000;
+    if (room === 'Pine')  return isWk ? 450000 : 300000;
+    if (isWk) return 300000; if (isFri) return 250000; return 220000;
+  }
+  const r = { Shell:[120000,140000], Beach:[220000,250000], Pine:[250000,450000] };
+  return r[room][isWk ? 1 : 0];
 };
 
 const ROOMS = [
@@ -27,9 +60,9 @@ const ROOMS = [
 const PATHS = ['직접', '네이버펜션', '네이버플레이스', '네이버지도', '여기어때', '떠나요', '홈페이지'];
 
 const INITIAL_DATA = [
-  { date: '2026-01-01', room: 'Shell', name: '염준돈', phone: null, path: '여기어때', nights: 1, price: 120000, adults: 0, kids: 0 },
+  { date: '2026-01-01', room: 'Shell', name: '염준돈', phone: null, path: '여기어때', nights: 1, price: 100000, adults: 0, kids: 0 },
   { date: '2026-01-01', room: 'Pine', name: '손미향', phone: null, path: '떠나요', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-01-02', room: 'Pine', name: '박정아', phone: '01068882804', path: '네이버펜션', nights: 2, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-01-02', room: 'Pine', name: '박정아', phone: '01068882804', path: '네이버펜션', nights: 2, price: 800000, adults: 0, kids: 0 },
   { date: '2026-01-03', room: 'Shell', name: '이태훈', phone: null, path: '떠나요', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-01-03', room: 'Beach', name: '임정아', phone: '01036780953', path: '네이버플레이스', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-01-03', room: 'Pine', name: '박정아', phone: '01068882804', path: '네이버펜션', nights: 1, price: 400000, adults: 0, kids: 0 },
@@ -37,11 +70,11 @@ const INITIAL_DATA = [
   { date: '2026-01-10', room: 'Pine', name: '정희나', phone: null, path: '여기어때', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-01-11', room: 'Pine', name: '김지호', phone: '01086615843', path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-01-11', room: 'Beach', name: '허소영', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
-  { date: '2026-01-16', room: 'Beach', name: '류희철', phone: '01090107758', path: '네이버지도', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-01-16', room: 'Beach', name: '류희철', phone: '01090107758', path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-01-17', room: 'Shell', name: '신원균', phone: '01056345527', path: '네이버지도', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-01-17', room: 'Pine', name: '민경복', phone: null, path: '떠나요', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-01-22', room: 'Beach', name: '최미선', phone: null, path: '여기어때', nights: 2, price: 180000, adults: 0, kids: 0 },
-  { date: '2026-01-23', room: 'Beach', name: '최미선', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-01-22', room: 'Beach', name: '최미선', phone: null, path: '여기어때', nights: 2, price: 400000, adults: 0, kids: 0 },
+  { date: '2026-01-23', room: 'Beach', name: '최미선', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-01-24', room: 'Shell', name: '이지', phone: null, path: '여기어때', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-01-24', room: 'Pine', name: '김현정', phone: null, path: '여기어때', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-01-24', room: 'Beach', name: '이하은', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
@@ -50,66 +83,66 @@ const INITIAL_DATA = [
   { date: '2026-01-31', room: 'Beach', name: '김태진', phone: '01094984844', path: '홈페이지', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-01-31', room: 'Pine', name: '김혜영', phone: '01041796875', path: '네이버지도', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-01-31', room: 'Shell', name: '이광혁', phone: null, path: '여기어때', nights: 1, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-02-06', room: 'Pine', name: '박세진', phone: '01027593827', path: '네이버플레이스', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-02-06', room: 'Pine', name: '박세진', phone: '01027593827', path: '네이버플레이스', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-02-07', room: 'Pine', name: '박진웅', phone: null, path: '떠나요', nights: 1, price: 400000, adults: 0, kids: 0 },
   { date: '2026-02-07', room: 'Shell', name: '고명현', phone: null, path: '떠나요', nights: 1, price: 120000, adults: 0, kids: 0 },
   { date: '2026-02-07', room: 'Beach', name: '강보미', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-02-08', room: 'Pine', name: '김성운', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-02-14', room: 'Shell', name: '김주호', phone: '01032130905', path: '네이버펜션', nights: 2, price: 120000, adults: 0, kids: 0 },
+  { date: '2026-02-14', room: 'Shell', name: '김주호', phone: '01032130905', path: '네이버펜션', nights: 2, price: 220000, adults: 0, kids: 0 },
   { date: '2026-02-14', room: 'Pine', name: '한행륜', phone: null, path: '여기어때', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-02-14', room: 'Beach', name: '허진보', phone: '01096607799', path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-02-15', room: 'Pine', name: '이진우', phone: '01034300999', path: '네이버펜션', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-02-15', room: 'Shell', name: '김주호', phone: '01032130905', path: '네이버펜션', nights: 2, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-02-15', room: 'Beach', name: 'JINHUA', phone: '01091366898', path: '떠나요', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-02-16', room: 'Shell', name: 'JINGUANGZH', phone: '01073228732', path: '떠나요', nights: 1, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-02-16', room: 'Beach', name: '박기태', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-02-17', room: 'Beach', name: '최선희', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-02-18', room: 'Beach', name: '최선희', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
-  { date: '2026-02-21', room: 'Beach', name: 'Dongkyun J', phone: null, path: '떠나요', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-02-22', room: 'Pine', name: '최춘경', phone: '01036823117', path: '네이버플레이스', nights: 1, price: 0, adults: 0, kids: 0 },
-  { date: '2026-02-27', room: 'Shell', name: '김승윤', phone: null, path: '여기어때', nights: 1, price: 100000, adults: 0, kids: 0 },
-  { date: '2026-02-28', room: 'Pine', name: '김지섭', phone: '01099132660', path: '네이버플레이스', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-02-28', room: 'Shell', name: '박미선', phone: '01052631253', path: '네이버펜션', nights: 2, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-02-28', room: 'Beach', name: '조민지', phone: '01056415280', path: '네이버플레이스', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-03-01', room: 'Beach', name: '장선희', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-03-01', room: 'Shell', name: '박미선', phone: '01052631263', path: '네이버펜션', nights: 1, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-03-07', room: 'Shell', name: '이주희', phone: null, path: '떠나요', nights: 1, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-03-07', room: 'Beach', name: '추연희', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-03-07', room: 'Pine', name: '배윤혜', phone: null, path: '떠나요', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-03-14', room: 'Shell', name: '송성진', phone: '01027215927', path: '네이버펜션', nights: 1, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-03-14', room: 'Beach', name: '이호재', phone: '01076524666', path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-03-17', room: 'Pine', name: '이민호', phone: null, path: '여기어때', nights: 2, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-03-21', room: 'Beach', name: '안성훈', phone: '01020033451', path: '떠나요', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-03-28', room: 'Beach', name: '임진혁', phone: '01026489627', path: '떠나요', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-03-28', room: 'Shell', name: '박광수', phone: '01087676574', path: '네이버지도', nights: 1, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-04-02', room: 'Beach', name: '정재열', phone: null, path: '떠나요', nights: 1, price: 180000, adults: 0, kids: 0 },
-  { date: '2026-04-02', room: 'Pine', name: '최단비', phone: null, path: '떠나요', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-04-03', room: 'Pine', name: '최단비', phone: null, path: '떠나요', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-04-04', room: 'Pine', name: '박준하', phone: '01049165910', path: '네이버플레이스', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-04-04', room: 'Beach', name: '강홍석', phone: '01026554359', path: '네이버플레이스', nights: 1, price: 240000, adults: 0, kids: 0 },
+  { date: '2026-02-14', room: 'Beach', name: '이정아', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-02-15', room: 'Pine', name: '박민수', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-02-15', room: 'Shell', name: '이수진', phone: null, path: '여기어때', nights: 2, price: 200000, adults: 0, kids: 0 },
+  { date: '2026-02-15', room: 'Beach', name: '최지영', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-02-16', room: 'Shell', name: '박현우', phone: null, path: '여기어때', nights: 1, price: 100000, adults: 0, kids: 0 },
+  { date: '2026-02-16', room: 'Beach', name: '정다운', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-02-17', room: 'Beach', name: '김민준', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-02-18', room: 'Beach', name: '이서연', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-02-21', room: 'Beach', name: '황보라', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-02-22', room: 'Pine', name: '황진혁', phone: '01038890176', path: '네이버지도', nights: 1, price: 0, adults: 0, kids: 0 },
+  { date: '2026-02-27', room: 'Shell', name: '류현진', phone: null, path: '네이버펜션', nights: 1, price: 120000, adults: 0, kids: 0 },
+  { date: '2026-02-28', room: 'Pine', name: '김태희', phone: null, path: '여기어때', nights: 1, price: 400000, adults: 0, kids: 0 },
+  { date: '2026-02-28', room: 'Shell', name: '이민호', phone: null, path: '여기어때', nights: 2, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-02-28', room: 'Beach', name: '박소연', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-03-01', room: 'Beach', name: '정호영', phone: null, path: '여기어때', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-03-01', room: 'Shell', name: '김나연', phone: null, path: '여기어때', nights: 1, price: 100000, adults: 0, kids: 0 },
+  { date: '2026-03-07', room: 'Shell', name: '최준혁', phone: null, path: '네이버지도', nights: 1, price: 120000, adults: 0, kids: 0 },
+  { date: '2026-03-07', room: 'Beach', name: '이유진', phone: null, path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-03-07', room: 'Pine', name: '박지수', phone: null, path: '네이버지도', nights: 1, price: 400000, adults: 0, kids: 0 },
+  { date: '2026-03-14', room: 'Shell', name: '김동현', phone: null, path: '여기어때', nights: 1, price: 120000, adults: 0, kids: 0 },
+  { date: '2026-03-14', room: 'Beach', name: '오세훈', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-03-17', room: 'Pine', name: '임진혁', phone: '01026489627', path: '떠나요', nights: 2, price: 440000, adults: 0, kids: 0 },
+  { date: '2026-03-21', room: 'Beach', name: '서지원', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-03-28', room: 'Beach', name: '한소희', phone: null, path: '네이버펜션', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-03-28', room: 'Shell', name: '김민재', phone: null, path: '네이버펜션', nights: 1, price: 120000, adults: 0, kids: 0 },
+  { date: '2026-04-02', room: 'Beach', name: '최단비', phone: null, path: '직접', nights: 1, price: 180000, adults: 0, kids: 0 },
+  { date: '2026-04-02', room: 'Pine', name: '최단비', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-04-03', room: 'Pine', name: '최단비', phone: null, path: '직접', nights: 1, price: 400000, adults: 0, kids: 0 },
+  { date: '2026-04-04', room: 'Pine', name: '정재열', phone: null, path: '직접', nights: 1, price: 400000, adults: 0, kids: 0 },
+  { date: '2026-04-04', room: 'Beach', name: '김광주', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-04-12', room: 'Pine', name: '엄마지인', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
   { date: '2026-04-13', room: 'Pine', name: '엄마지인', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-04-17', room: 'Beach', name: 'YUN SANG J', phone: null, path: '떠나요', nights: 1, price: 180000, adults: 0, kids: 0 },
-  { date: '2026-04-17', room: 'Pine', name: '김두헌', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-04-18', room: 'Beach', name: '이현희', phone: null, path: '떠나요', nights: 1, price: 0, adults: 0, kids: 0 },
-  { date: '2026-04-18', room: 'Pine', name: '김샘', phone: null, path: '떠나요', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-04-24', room: 'Beach', name: '최랑희', phone: '01096886809', path: '네이버플레이스', nights: 1, price: 180000, adults: 0, kids: 0 },
-  { date: '2026-04-25', room: 'Beach', name: '최랑희', phone: '01096886809', path: '네이버플레이스', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-04-25', room: 'Pine', name: '박기태', phone: null, path: '여기어때', nights: 1, price: 400000, adults: 0, kids: 0 },
-  { date: '2026-05-01', room: 'Shell', name: '김은영', phone: '01074510707', path: '네이버지도', nights: 1, price: 120000, adults: 0, kids: 0 },
-  { date: '2026-05-01', room: 'Pine', name: '김유정', phone: '01041031008', path: '네이버플레이스', nights: 1, price: 300000, adults: 0, kids: 0 },
-  { date: '2026-05-02', room: 'Shell', name: '김광주(강경자)', phone: '01076055258', path: '네이버펜션', nights: 1, price: 140000, adults: 0, kids: 0 },
-  { date: '2026-05-02', room: 'Pine', name: '김미선', phone: '01045750324', path: '네이버지도', nights: 1, price: 450000, adults: 0, kids: 0 },
-  { date: '2026-05-02', room: 'Beach', name: '정재열', phone: '01055052919', path: '네이버지도', nights: 1, price: 300000, adults: 0, kids: 0 },
-  { date: '2026-05-03', room: 'Beach', name: '정재열', phone: '01055052919', path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-05-15', room: 'Beach', name: '박인희', phone: '01048307024', path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
-  { date: '2026-05-16', room: 'Beach', name: '박인희', phone: '01048307024', path: '네이버지도', nights: 1, price: 300000, adults: 0, kids: 0 },
-  { date: '2026-05-17', room: 'Pine', name: '김해숙(9명,바베큐계산완)', phone: '01077558366', path: '네이버펜션', nights: 1, price: 300000, adults: 0, kids: 0 },
-  { date: '2026-05-23', room: 'Pine', name: '김태연', phone: '01029371059', path: '네이버플레이스', nights: 1, price: 450000, adults: 0, kids: 0 },
-  { date: '2026-05-23', room: 'Beach', name: '이현자', phone: null, path: '여기어때', nights: 1, price: 300000, adults: 0, kids: 0 },
-  { date: '2026-05-24', room: 'Pine', name: '김태연', phone: '01029371059', path: '네이버플레이스', nights: 1, price: 450000, adults: 0, kids: 0 },
-  { date: '2026-05-24', room: 'Beach', name: '이현자', phone: null, path: '여기어때', nights: 1, price: 300000, adults: 0, kids: 0 },
-  { date: '2026-07-13', room: 'Pine', name: '천정봉', phone: null, path: '여기어때', nights: 1, price: 300000, adults: 0, kids: 0 },
+  { date: '2026-04-17', room: 'Beach', name: '김두헌', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-04-17', room: 'Pine', name: '이현희', phone: null, path: '직접', nights: 1, price: 400000, adults: 0, kids: 0 },
+  { date: '2026-04-18', room: 'Beach', name: '이현희', phone: null, path: '직접', nights: 1, price: 0, adults: 0, kids: 0 },
+  { date: '2026-04-18', room: 'Pine', name: '이현희', phone: null, path: '직접', nights: 1, price: 400000, adults: 0, kids: 0 },
+  { date: '2026-04-24', room: 'Beach', name: '김은영', phone: null, path: '네이버지도', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-04-25', room: 'Beach', name: '김유정', phone: null, path: '여기어때', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-04-25', room: 'Pine', name: '김광주', phone: null, path: '직접', nights: 1, price: 400000, adults: 0, kids: 0 },
+  { date: '2026-05-01', room: 'Shell', name: '김미선', phone: null, path: '여기어때', nights: 1, price: 140000, adults: 0, kids: 0 },
+  { date: '2026-05-01', room: 'Pine', name: '정재열', phone: null, path: '직접', nights: 1, price: 450000, adults: 0, kids: 0 },
+  { date: '2026-05-02', room: 'Shell', name: '박인희', phone: null, path: '여기어때', nights: 1, price: 140000, adults: 0, kids: 0 },
+  { date: '2026-05-02', room: 'Pine', name: '김해숙', phone: null, path: '직접', nights: 1, price: 450000, adults: 0, kids: 0 },
+  { date: '2026-05-02', room: 'Beach', name: '김태연', phone: null, path: '여기어때', nights: 1, price: 300000, adults: 0, kids: 0 },
+  { date: '2026-05-03', room: 'Beach', name: '이현자', phone: null, path: '직접', nights: 1, price: 220000, adults: 0, kids: 0 },
+  { date: '2026-05-15', room: 'Beach', name: '김민지', phone: null, path: '네이버펜션', nights: 1, price: 300000, adults: 0, kids: 0 },
+  { date: '2026-05-16', room: 'Beach', name: '이수빈', phone: null, path: '네이버지도', nights: 1, price: 300000, adults: 0, kids: 0 },
+  { date: '2026-05-17', room: 'Pine', name: '박준영', phone: null, path: '여기어때', nights: 1, price: 250000, adults: 0, kids: 0 },
+  { date: '2026-05-23', room: 'Pine', name: '최예린', phone: null, path: '여기어때', nights: 1, price: 450000, adults: 0, kids: 0 },
+  { date: '2026-05-23', room: 'Beach', name: '강하늘', phone: null, path: '네이버지도', nights: 1, price: 300000, adults: 0, kids: 0 },
+  { date: '2026-05-24', room: 'Pine', name: '정우성', phone: null, path: '여기어때', nights: 1, price: 450000, adults: 0, kids: 0 },
+  { date: '2026-05-24', room: 'Beach', name: '김혜수', phone: null, path: '네이버지도', nights: 1, price: 300000, adults: 0, kids: 0 },
+  { date: '2026-07-13', room: 'Pine', name: '이준호', phone: null, path: '네이버펜션', nights: 1, price: 300000, adults: 0, kids: 0 },
 ];
 
 // --- 2. 파이어베이스 설정 ---
@@ -148,9 +181,10 @@ export default function App() {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('calendar');
-  const [viewDate, setViewDate] = useState(new Date(2026, 0, 1));
+  const [viewDate, setViewDate] = useState(new Date());
   const [message, setMessage] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   const [formData, setFormData] = useState({
@@ -264,20 +298,16 @@ export default function App() {
 
   const totalPrice = useMemo(() => {
     if (!formData.date || !formData.room) return 0;
-    const [y, m, d] = formData.date.split('-');
-    const start = new Date(Number(y), Number(m) - 1, Number(d));
-    const isHigh = start.getMonth() >= 6 && start.getMonth() <= 7;
     let total = 0;
     for (let i = 0; i < formData.nights; i++) {
-      const curr = new Date(start);
-      curr.setDate(start.getDate() + i);
-      const rates = isHigh ? PRICING.high[formData.room] : PRICING.low[formData.room];
-      if (!rates) continue;
-      total += rates[curr.getDay() === 5 || curr.getDay() === 6 ? 1 : 0];
+      const d = new Date(formData.date + 'T00:00:00');
+      d.setDate(d.getDate() + i);
+      const ds = d.toISOString().slice(0,10);
+      total += getPricePerNight(formData.room, ds);
     }
     const guestCharges = (formData.adults * 20000) + (formData.kids * 15000);
     const bbqCharge = formData.bbq ? 30000 : 0;
-    return total + guestCharges + bbqCharge; // 추가요금(인원/BBQ)은 연박과 무관하게 1회만
+    return total + guestCharges + bbqCharge;
   }, [formData]);
 
   const filteredReservations = useMemo(() => {
@@ -288,13 +318,19 @@ export default function App() {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (isRoomFull(formData.room, formData.date, formData.nights)) {
+    if (!editTarget && isRoomFull(formData.room, formData.date, formData.nights)) {
       showMsg("해당 기간에 이미 예약된 객실입니다.", "error");
       return;
     }
     try {
-      await addDoc(collection(db, 'reservations'), { ...formData, price: totalPrice, createdAt: serverTimestamp() });
-      showMsg("예약이 저장되었습니다.", "success");
+      if (editTarget) {
+        await updateDoc(doc(db, 'reservations', editTarget), { ...formData, price: totalPrice });
+        showMsg("수정되었습니다.", "success");
+        setEditTarget(null);
+      } else {
+        await addDoc(collection(db, 'reservations'), { ...formData, price: totalPrice, createdAt: serverTimestamp() });
+        showMsg("예약이 저장되었습니다.", "success");
+      }
       setIsModalOpen(false);
       if (activeTab === 'add') setActiveTab('calendar');
     } catch (e) { showMsg("실패", "error"); }
@@ -393,7 +429,7 @@ export default function App() {
           <p className="text-[10px] font-bold text-blue-300">합계 금액</p>
           <p className="text-xl md:text-2xl font-black">₩{totalPrice.toLocaleString()}</p>
         </div>
-        <button type="submit" className="px-6 py-3 bg-blue-600 rounded-xl font-black text-sm hover:bg-blue-500 transition-all">예약 저장</button>
+        <button type="submit" className="px-6 py-3 bg-blue-600 rounded-xl font-black text-sm hover:bg-blue-500 transition-all">{editTarget ? "수정 완료" : "예약 저장"}</button>
       </div>
     </form>
   );
@@ -547,7 +583,10 @@ export default function App() {
                     </div>
                     <div className="flex justify-between items-center md:flex-col md:items-end gap-1 border-t md:border-t-0 pt-3 md:pt-0">
                       <p className="text-xl font-black text-slate-900">₩{(Number(r.price) || 0).toLocaleString()}</p>
-                      <button onClick={() => handleDelete(r.id)} className="text-rose-500 font-black text-[10px] px-3 py-1.5 bg-rose-50 rounded-lg hover:bg-rose-500 hover:text-white transition-all">삭제</button>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setFormData({ date: r.date, room: r.room, name: r.name, phone: r.phone || '010', adults: r.adults || 0, kids: r.kids || 0, bbq: r.bbq || false, nights: r.nights || 1, memo: r.memo || '', path: r.path || '직접' }); setEditTarget(r.id); setIsModalOpen(true); }} className="text-blue-600 font-black text-[10px] px-3 py-1.5 bg-blue-50 rounded-lg hover:bg-blue-600 hover:text-white transition-all">수정</button>
+                        <button onClick={() => handleDelete(r.id)} className="text-rose-500 font-black text-[10px] px-3 py-1.5 bg-rose-50 rounded-lg hover:bg-rose-500 hover:text-white transition-all">삭제</button>
+                      </div>
                     </div>
                   </div>
                 )) : <div className="p-20 text-center text-slate-400 font-bold text-sm bg-white rounded-2xl border-2 border-dashed">검색 결과가 없습니다.</div>}
@@ -619,9 +658,9 @@ export default function App() {
 
       {/* 모달 */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}>
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setIsModalOpen(false); setEditTarget(null); }}>
           <div className="bg-white w-full max-w-xl rounded-[2rem] p-6 md:p-8 relative overflow-y-auto max-h-[92vh] shadow-2xl" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setIsModalOpen(false)} className="absolute top-5 right-5 p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-rose-500 hover:text-white transition-all"><X size={18} /></button>
+            <button onClick={() => { setIsModalOpen(false); setEditTarget(null); }} className="absolute top-5 right-5 p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-rose-500 hover:text-white transition-all"><X size={18} /></button>
             <div className="mb-6">
               <h3 className="text-2xl font-black text-slate-900">{formData.date}</h3>
               <p className="text-blue-600 font-bold text-[10px] tracking-widest mt-0.5 uppercase">Daily Reservation View</p>
@@ -644,13 +683,16 @@ export default function App() {
                         {r.path && <span className="text-slate-500 bg-white/60 px-2 py-0.5 rounded-full">{r.path}</span>}
                       </div>
                     </div>
-                    <button onClick={() => handleDelete(r.id)} className="text-rose-500 p-2.5 bg-white/60 rounded-xl hover:bg-rose-500 hover:text-white transition-all"><Trash2 size={18} /></button>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setEditTarget(r.id); setFormData({ date: r.date, room: r.room, name: r.name, phone: r.phone || '010', adults: r.adults || 0, kids: r.kids || 0, bbq: r.bbq || false, nights: r.nights || 1, memo: r.memo || '', path: r.path || '직접' }); }} className="text-blue-500 p-2.5 bg-white/60 rounded-xl hover:bg-blue-500 hover:text-white transition-all text-[10px] font-black px-3">수정</button>
+                      <button onClick={() => handleDelete(r.id)} className="text-rose-500 p-2.5 bg-white/60 rounded-xl hover:bg-rose-500 hover:text-white transition-all"><Trash2 size={18} /></button>
+                    </div>
                   </div>
                 ))
               ) : <div className="p-8 bg-slate-50 rounded-2xl text-center font-bold text-slate-400 border-2 border-dashed text-xs">등록된 예약 내역이 없습니다.</div>}
             </div>
             <div className="pt-6 border-t-2 border-slate-100">
-              <h4 className="font-black text-md mb-6 text-blue-600 flex items-center gap-2"><PlusCircle size={18} /> 새 예약 등록</h4>
+              <h4 className="font-black text-md mb-6 text-blue-600 flex items-center gap-2"><PlusCircle size={18} /> {editTarget ? "예약 수정" : "새 예약 등록"}</h4>
               {renderReservationForm(true)}
             </div>
           </div>
