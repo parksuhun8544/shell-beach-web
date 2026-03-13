@@ -20,17 +20,21 @@ const HOLIDAYS = new Set([
   '2026-09-24','2026-09-25','2026-09-26',
   '2026-10-03','2026-10-05','2026-10-09','2026-12-25',
 ]);
+const addDays = (dateStr, n) => {
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m-1, d+n);
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+};
 const isNextDayOff = (dateStr) => {
-  const d = new Date(dateStr + 'T00:00:00');
-  const nxt = new Date(d); nxt.setDate(d.getDate() + 1);
-  const nxtStr = nxt.toISOString().slice(0,10);
-  const w = nxt.getDay();
-  return w === 0 || w === 6 || HOLIDAYS.has(nxtStr);
+  const nxt = addDays(dateStr, 1);
+  const [y,m,d] = nxt.split('-').map(Number);
+  const w = new Date(y, m-1, d).getDay();
+  return w === 0 || w === 6 || HOLIDAYS.has(nxt);
 };
 const getPricePerNight = (room, dateStr) => {
-  const d = new Date(dateStr + 'T00:00:00');
-  const m = d.getMonth() + 1, day = d.getDate(), dow = d.getDay();
-  if ((m === 7 && day >= 15) || (m === 8 && day <= 15))
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const dow = new Date(y, m-1, d).getDay();
+  if ((m === 7 && d >= 15) || (m === 8 && d <= 15))
     return { Shell:140000, Beach:300000, Pine:450000 }[room];
   const isWk = isNextDayOff(dateStr);
   const isFri = dow === 5;
@@ -42,10 +46,13 @@ const getPricePerNight = (room, dateStr) => {
     const r = { Shell:[120000,140000], Beach:[220000,300000], Pine:[250000,450000] };
     return r[room][isWk ? 1 : 0];
   }
-  if (m === 7 && day <= 14) {
+  if (m === 7 && d <= 14) {
     if (room === 'Shell') return isWk ? 140000 : 120000;
     if (room === 'Pine')  return isWk ? 450000 : 300000;
-    if (isWk) return 300000; if (isFri) return 250000; return 220000;
+    // Beach: 주말(다음날휴일)=30만, 금요일(다음날평일)=25만, 나머지=22만
+    if (isWk) return 300000;
+    if (isFri) return 250000;
+    return 220000;
   }
   const r = { Shell:[120000,140000], Beach:[220000,250000], Pine:[250000,450000] };
   return r[room][isWk ? 1 : 0];
