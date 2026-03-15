@@ -192,6 +192,9 @@ export default function App() {
   const [editTarget, setEditTarget] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [exitConfirm, setExitConfirm] = useState(false);
+  const [selectedResId, setSelectedResId] = useState(null); // 모달에서 선택된 예약 ID
+  const [isManualPrice, setIsManualPrice] = useState(false);
+  const [manualPrice, setManualPrice] = useState('');
   const [formData, setFormData] = useState({
     date: getLocalTodayStr(), room:'Shell', name:'', phone:'010',
     adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접'
@@ -256,6 +259,9 @@ export default function App() {
       if (isModalOpen) {
         setIsModalOpen(false);
         setEditTarget(null);
+        setSelectedResId(null);
+        setIsManualPrice(false);
+        setManualPrice('');
         return;
       }
       if (activeTab !== 'calendar') {
@@ -335,16 +341,20 @@ export default function App() {
         return;
       }
     }
+    const finalPrice = isManualPrice ? (Number(manualPrice)||0) : totalPrice;
     try {
       if (editTarget) {
-        await updateDoc(doc(db,'reservations',editTarget), { ...formData, price:totalPrice });
+        await updateDoc(doc(db,'reservations',editTarget), { ...formData, price:finalPrice });
         showMsg("수정되었습니다.", "success");
         setEditTarget(null);
       } else {
-        await addDoc(collection(db,'reservations'), { ...formData, price:totalPrice, createdAt:serverTimestamp() });
+        await addDoc(collection(db,'reservations'), { ...formData, price:finalPrice, createdAt:serverTimestamp() });
         showMsg("예약이 저장되었습니다.", "success");
       }
       setIsModalOpen(false);
+      setSelectedResId(null);
+      setIsManualPrice(false);
+      setManualPrice('');
       if (activeTab==='add') setActiveTab('calendar');
     } catch(e) { showMsg("실패", "error"); }
   };
@@ -453,14 +463,35 @@ export default function App() {
           바베큐 그릴 (30,000원) {formData.bbq ? '신청완료' : '미신청'}
         </button>
       </div>
-      <div className="p-4 bg-slate-900 rounded-2xl text-white flex justify-between items-center shadow-lg">
-        <div>
-          <p className="text-[10px] font-bold text-blue-300">합계 금액</p>
-          <p className="text-xl md:text-2xl font-black">₩{totalPrice.toLocaleString()}</p>
+      <div className="p-4 bg-slate-900 rounded-2xl text-white shadow-lg space-y-3">
+        <div className="flex justify-between items-center">
+          <div>
+            <p className="text-[10px] font-bold text-blue-300">합계 금액</p>
+            {isManualPrice ? (
+              <input
+                type="number"
+                value={manualPrice}
+                onChange={e => setManualPrice(e.target.value)}
+                placeholder="직접 입력"
+                className="text-xl font-black bg-transparent border-b-2 border-blue-400 outline-none w-40 text-white placeholder-slate-500 mt-1"
+              />
+            ) : (
+              <p className="text-xl md:text-2xl font-black">₩{totalPrice.toLocaleString()}</p>
+            )}
+          </div>
+          <button type="submit"
+            className="px-6 py-3 bg-blue-600 rounded-xl font-black text-sm hover:bg-blue-500 transition-all">
+            {editTarget ? "수정 완료" : "예약 저장"}
+          </button>
         </div>
-        <button type="submit"
-          className="px-6 py-3 bg-blue-600 rounded-xl font-black text-sm hover:bg-blue-500 transition-all">
-          {editTarget ? "수정 완료" : "예약 저장"}
+        <button type="button"
+          onClick={() => {
+            setIsManualPrice(!isManualPrice);
+            setManualPrice(isManualPrice ? '' : String(totalPrice));
+          }}
+          className={`w-full py-2 rounded-xl font-bold text-xs transition-all border
+            ${isManualPrice ? 'bg-amber-500 border-amber-400 text-white' : 'bg-white/10 border-white/20 text-slate-300 hover:bg-white/20'}`}>
+          {isManualPrice ? '✏️ 직접입력 중 (자동계산으로 돌아가기)' : '가격 직접입력 (할인/협의)'}
         </button>
       </div>
     </form>
@@ -728,57 +759,118 @@ export default function App() {
       {/* 모달 */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-          onClick={() => { setIsModalOpen(false); setEditTarget(null); }}>
+          onClick={() => { setIsModalOpen(false); setEditTarget(null); setSelectedResId(null); setIsManualPrice(false); setManualPrice(''); }}>
           <div className="bg-white w-full max-w-xl rounded-[2rem] p-6 md:p-8 relative overflow-y-auto max-h-[92vh] shadow-2xl"
             onClick={e => e.stopPropagation()}>
-            <button onClick={() => { setIsModalOpen(false); setEditTarget(null); }}
+            <button onClick={() => { setIsModalOpen(false); setEditTarget(null); setSelectedResId(null); setIsManualPrice(false); setManualPrice(''); }}
               className="absolute top-5 right-5 p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-rose-500 hover:text-white transition-all">
               <X size={18} />
             </button>
-            <div className="mb-6">
+
+            {/* 날짜 헤더 + 합계금액 */}
+            <div className="mb-5">
               <h3 className="text-2xl font-black text-slate-900">{formData.date}</h3>
               <p className="text-blue-600 font-bold text-[10px] tracking-widest mt-0.5 uppercase">Daily Reservation View</p>
+              {/* 합계 / 개별 금액 표시 */}
+              {(reservationMap[formData.date]||[]).length > 0 && (
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  {selectedResId ? (
+                    (() => {
+                      const sel = (reservationMap[formData.date]||[]).find(r => r.id === selectedResId);
+                      return sel ? (
+                        <span className="px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-black">
+                          {sel.name}님 · ₩{(Number(sel.price)||0).toLocaleString()}
+                        </span>
+                      ) : null;
+                    })()
+                  ) : (
+                    <span className="px-3 py-1.5 bg-slate-900 text-white rounded-full text-xs font-black">
+                      합계 · ₩{(reservationMap[formData.date]||[]).reduce((s,r)=>s+(Number(r.price)||0),0).toLocaleString()}
+                    </span>
+                  )}
+                  {selectedResId && (
+                    <button onClick={() => { setSelectedResId(null); setEditTarget(null); }}
+                      className="px-3 py-1.5 bg-slate-100 text-slate-500 rounded-full text-xs font-bold hover:bg-slate-200 transition-all">
+                      전체보기
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="mb-8 space-y-2.5">
+
+            {/* 예약 내역 목록 */}
+            <div className="mb-6 space-y-2.5">
               {(reservationMap[formData.date]||[]).length > 0 ? (
-                reservationMap[formData.date].map((r,i) => (
-                  <div key={`${r.id}-${i}`} className={`p-4 rounded-2xl border flex justify-between items-center shadow-sm
-                    ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-slate-50'}`}>
-                    <div>
-                      <span className="font-black text-base">{r.room}</span>
-                      <span className="ml-3 font-bold text-sm text-slate-600">{r.name}님</span>
-                      <div className="text-[10px] font-bold mt-1 opacity-60 flex items-center gap-3">
-                        {r.phone && (
-                          <a href={`tel:${r.phone}`} className="text-blue-600 underline flex items-center gap-1">
-                            {formatPhone(r.phone)}
-                          </a>
+                reservationMap[formData.date].map((r,i) => {
+                  const isSelected = selectedResId === r.id;
+                  return (
+                    <div key={`${r.id}-${i}`}
+                      onClick={() => {
+                        if (selectedResId === r.id) {
+                          setSelectedResId(null);
+                          setEditTarget(null);
+                        } else {
+                          setSelectedResId(r.id);
+                          setEditTarget(null);
+                        }
+                      }}
+                      className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-sm
+                        ${isSelected ? 'ring-2 ring-blue-500 shadow-md' : 'hover:shadow-md'}
+                        ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-slate-50'}`}>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-base">{r.room}</span>
+                            <span className="font-bold text-sm text-slate-600">{r.name}님</span>
+                            <span className="font-black text-sm text-slate-800">₩{(Number(r.price)||0).toLocaleString()}</span>
+                          </div>
+                          <div className="text-[10px] font-bold mt-1.5 opacity-70 flex items-center gap-2 flex-wrap">
+                            {r.phone && (
+                              <a href={`tel:${r.phone}`}
+                                onClick={e => e.stopPropagation()}
+                                className="text-blue-600 underline flex items-center gap-1">
+                                <Phone size={10}/>{formatPhone(r.phone)}
+                              </a>
+                            )}
+                            <span>{r.nights}박</span>
+                            {r.adults > 0 && <span>성인 {r.adults}</span>}
+                            {r.kids > 0 && <span>아동 {r.kids}</span>}
+                            {r.path && <span className="bg-white/60 px-2 py-0.5 rounded-full">{r.path}</span>}
+                          </div>
+                        </div>
+                        {/* 수정/삭제 - 선택됐을 때만 표시 */}
+                        {isSelected && (
+                          <div className="flex gap-2 ml-2 shrink-0" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => {
+                              setEditTarget(r.id);
+                              setFormData({ date:r.date, room:r.room, name:r.name, phone:r.phone||'010',
+                                adults:r.adults||0, kids:r.kids||0, bbq:r.bbq||false,
+                                nights:r.nights||1, memo:r.memo||'', path:r.path||'직접' });
+                              setIsManualPrice(false);
+                              setManualPrice('');
+                            }} className="text-blue-500 p-2 bg-white/70 rounded-xl hover:bg-blue-500 hover:text-white transition-all text-[10px] font-black px-3">
+                              수정
+                            </button>
+                            <button onClick={() => handleDelete(r.id)}
+                              className="text-rose-500 p-2 bg-white/70 rounded-xl hover:bg-rose-500 hover:text-white transition-all">
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         )}
-                        <span>{r.adults}성인 / {r.kids}아동 / {r.nights}박</span>
-                        {r.path && <span className="text-slate-500 bg-white/60 px-2 py-0.5 rounded-full">{r.path}</span>}
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => {
-                        setEditTarget(r.id);
-                        setFormData({ date:r.date, room:r.room, name:r.name, phone:r.phone||'010',
-                          adults:r.adults||0, kids:r.kids||0, bbq:r.bbq||false,
-                          nights:r.nights||1, memo:r.memo||'', path:r.path||'직접' });
-                      }} className="text-blue-500 p-2.5 bg-white/60 rounded-xl hover:bg-blue-500 hover:text-white transition-all text-[10px] font-black px-3">수정</button>
-                      <button onClick={() => handleDelete(r.id)}
-                        className="text-rose-500 p-2.5 bg-white/60 rounded-xl hover:bg-rose-500 hover:text-white transition-all">
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="p-8 bg-slate-50 rounded-2xl text-center font-bold text-slate-400 border-2 border-dashed text-xs">
                   등록된 예약 내역이 없습니다.
                 </div>
               )}
             </div>
+
+            {/* 신규/수정 폼 */}
             <div className="pt-6 border-t-2 border-slate-100">
-              <h4 className="font-black text-md mb-6 text-blue-600 flex items-center gap-2">
+              <h4 className="font-black text-md mb-5 text-blue-600 flex items-center gap-2">
                 <PlusCircle size={18} /> {editTarget ? "예약 수정" : "새 예약 등록"}
               </h4>
               {renderForm(true)}
