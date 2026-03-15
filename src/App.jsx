@@ -44,8 +44,10 @@ const getPricePerNight = (room, dateStr) => {
     return { Shell:140000, Beach:300000, Pine:450000 }[room];
   if (mmdd >= 701 && mmdd <= 714 && room === 'Beach' && isFri)
     return 250000;
-  if (mmdd >= 501 && mmdd <= 714)
+  if (mmdd >= 701 && mmdd <= 714)
     return { Shell:[120000,140000], Beach:[220000,300000], Pine:[300000,450000] }[room][wk?1:0];
+  if (mmdd >= 501 && mmdd <= 630)
+    return { Shell:[120000,140000], Beach:[220000,300000], Pine:[250000,450000] }[room][wk?1:0];
   return { Shell:[100000,120000], Beach:[180000,220000], Pine:[220000,400000] }[room][wk?1:0];
 };
 
@@ -128,14 +130,14 @@ const INITIAL_DATA = [
   { date:'2026-04-25', room:'Beach', name:'김유정', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
   { date:'2026-04-25', room:'Pine', name:'김광주', phone:null, path:'직접', nights:1, price:400000, adults:0, kids:0 },
   { date:'2026-05-01', room:'Shell', name:'김미선', phone:null, path:'여기어때', nights:1, price:120000, adults:0, kids:0 },
-  { date:'2026-05-01', room:'Pine', name:'정재열', phone:null, path:'직접', nights:1, price:300000, adults:0, kids:0 },
+  { date:'2026-05-01', room:'Pine', name:'정재열', phone:null, path:'직접', nights:1, price:250000, adults:0, kids:0 },
   { date:'2026-05-02', room:'Shell', name:'박인희', phone:null, path:'여기어때', nights:1, price:140000, adults:0, kids:0 },
   { date:'2026-05-02', room:'Pine', name:'김해숙', phone:null, path:'직접', nights:1, price:450000, adults:0, kids:0 },
   { date:'2026-05-02', room:'Beach', name:'김태연', phone:null, path:'여기어때', nights:1, price:300000, adults:0, kids:0 },
   { date:'2026-05-03', room:'Beach', name:'이현자', phone:null, path:'직접', nights:1, price:220000, adults:0, kids:0 },
   { date:'2026-05-15', room:'Beach', name:'김민지', phone:null, path:'네이버펜션', nights:1, price:220000, adults:0, kids:0 },
   { date:'2026-05-16', room:'Beach', name:'이수빈', phone:null, path:'네이버지도', nights:1, price:300000, adults:0, kids:0 },
-  { date:'2026-05-17', room:'Pine', name:'박준영', phone:null, path:'여기어때', nights:1, price:300000, adults:0, kids:0 },
+  { date:'2026-05-17', room:'Pine', name:'박준영', phone:null, path:'여기어때', nights:1, price:250000, adults:0, kids:0 },
   { date:'2026-05-23', room:'Pine', name:'최예린', phone:null, path:'여기어때', nights:1, price:450000, adults:0, kids:0 },
   { date:'2026-05-23', room:'Beach', name:'강하늘', phone:null, path:'네이버지도', nights:1, price:300000, adults:0, kids:0 },
   { date:'2026-05-24', room:'Pine', name:'정우성', phone:null, path:'여기어때', nights:1, price:450000, adults:0, kids:0 },
