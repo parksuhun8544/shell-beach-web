@@ -251,12 +251,19 @@ export default function App() {
     }, (e) => { console.error(e); setLoading(false); });
   }, [user, isUnlocked]);
 
-  // 뒤로가기 처리
+  // 뒤로가기 처리 - ref로 최신 상태 참조 (재마운트 방지)
+  const backStateRef = React.useRef({ isModalOpen, activeTab, exitConfirm });
+  useEffect(() => {
+    backStateRef.current = { isModalOpen, activeTab, exitConfirm };
+  }, [isModalOpen, activeTab, exitConfirm]);
+
   useEffect(() => {
     if (!isUnlocked) return;
-    const handleBack = (e) => {
-      e.preventDefault();
-      if (isModalOpen) {
+    window.history.pushState(null, '', window.location.href);
+    const handleBack = () => {
+      window.history.pushState(null, '', window.location.href);
+      const s = backStateRef.current;
+      if (s.isModalOpen) {
         setIsModalOpen(false);
         setEditTarget(null);
         setSelectedResId(null);
@@ -264,21 +271,20 @@ export default function App() {
         setManualPrice('');
         return;
       }
-      if (activeTab !== 'calendar') {
+      if (s.activeTab !== 'calendar') {
         setActiveTab('calendar');
         return;
       }
-      if (exitConfirm) {
-        window.history.back();
+      if (s.exitConfirm) {
+        window.history.go(-2);
       } else {
         setExitConfirm(true);
         setTimeout(() => setExitConfirm(false), 3000);
       }
     };
-    window.history.pushState(null, '', window.location.href);
     window.addEventListener('popstate', handleBack);
     return () => window.removeEventListener('popstate', handleBack);
-  }, [isUnlocked, isModalOpen, activeTab, exitConfirm]);
+  }, [isUnlocked]);
 
   // reservationMap
   const reservationMap = useMemo(() => {
@@ -463,36 +469,36 @@ export default function App() {
           바베큐 그릴 (30,000원) {formData.bbq ? '신청완료' : '미신청'}
         </button>
       </div>
-      <div className="p-4 bg-slate-900 rounded-2xl text-white shadow-lg space-y-3">
-        <div className="flex justify-between items-center">
-          <div>
-            <p className="text-[10px] font-bold text-blue-300">합계 금액</p>
-            {isManualPrice ? (
-              <input
-                type="number"
-                value={manualPrice}
-                onChange={e => setManualPrice(e.target.value)}
-                placeholder="직접 입력"
-                className="text-xl font-black bg-transparent border-b-2 border-blue-400 outline-none w-40 text-white placeholder-slate-500 mt-1"
-              />
-            ) : (
-              <p className="text-xl md:text-2xl font-black">₩{totalPrice.toLocaleString()}</p>
-            )}
+      <div className="space-y-2">
+        {/* 가격 직접입력 토글 */}
+        {isManualPrice && (
+          <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl flex items-center gap-3">
+            <span className="text-xs font-bold text-amber-700 shrink-0">직접입력</span>
+            <input
+              type="number"
+              value={manualPrice}
+              onChange={e => setManualPrice(e.target.value)}
+              placeholder="금액 입력"
+              className="flex-1 bg-transparent border-b-2 border-amber-400 outline-none font-black text-amber-900 text-base placeholder-amber-300"
+            />
+            <span className="text-xs font-bold text-amber-600">원</span>
           </div>
+        )}
+        <div className="flex gap-2">
+          <button type="button"
+            onClick={() => {
+              setIsManualPrice(!isManualPrice);
+              setManualPrice(isManualPrice ? '' : String(totalPrice));
+            }}
+            className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all border
+              ${isManualPrice ? 'bg-amber-500 border-amber-400 text-white' : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'}`}>
+            {isManualPrice ? '✏️ 직접입력 중' : '가격 직접입력'}
+          </button>
           <button type="submit"
-            className="px-6 py-3 bg-blue-600 rounded-xl font-black text-sm hover:bg-blue-500 transition-all">
+            className="flex-1 py-3 bg-blue-600 rounded-xl font-black text-sm text-white hover:bg-blue-500 transition-all shadow-lg">
             {editTarget ? "수정 완료" : "예약 저장"}
           </button>
         </div>
-        <button type="button"
-          onClick={() => {
-            setIsManualPrice(!isManualPrice);
-            setManualPrice(isManualPrice ? '' : String(totalPrice));
-          }}
-          className={`w-full py-2 rounded-xl font-bold text-xs transition-all border
-            ${isManualPrice ? 'bg-amber-500 border-amber-400 text-white' : 'bg-white/10 border-white/20 text-slate-300 hover:bg-white/20'}`}>
-          {isManualPrice ? '✏️ 직접입력 중 (자동계산으로 돌아가기)' : '가격 직접입력 (할인/협의)'}
-        </button>
       </div>
     </form>
   );
@@ -537,7 +543,7 @@ export default function App() {
       {/* 종료 확인 토스트 */}
       {exitConfirm && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1000] px-6 py-2.5 rounded-full shadow-2xl font-bold bg-amber-500 text-white">
-          한 번 더 누르면 종료됩니다
+          종료하시겠습니까? 한 번 더 누르면 종료됩니다
         </div>
       )}
 
