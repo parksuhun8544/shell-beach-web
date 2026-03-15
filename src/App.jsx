@@ -879,7 +879,9 @@ export default function App() {
                           <div className="flex items-center gap-2">
                             <span className="font-black text-base">{r.room}</span>
                             <span className="font-bold text-sm text-slate-600">{r.name}님</span>
-                            <span className="font-black text-sm text-slate-800">₩{(Number(r.price)||0).toLocaleString()}</span>
+                            <span className="font-black text-sm text-slate-800">
+                              ₩{getPricePerNight(r.room, formData.date).toLocaleString()}
+                            </span>
                           </div>
                           <div className="text-[10px] font-bold mt-1.5 opacity-70 flex items-center gap-2 flex-wrap">
                             {r.phone && (
