@@ -313,15 +313,20 @@ export default function App() {
     let revenue = 0;
     const monthlyRoomStats = Array(12).fill(null).map(() => ({ Shell:0, Beach:0, Pine:0, total:0 }));
     reservations.forEach(r => {
-      const price = Number(r.price)||0;
-      revenue += price;
-      if (r.date) {
-        const [y,m] = r.date.split('-');
-        if (y==='2026') {
-          const mIdx = Number(m)-1;
-          if (mIdx>=0 && mIdx<12 && r.room) {
-            monthlyRoomStats[mIdx][r.room] += price;
-            monthlyRoomStats[mIdx].total += price;
+      if (!r.date || !r.room || !r.nights) return;
+      const nights = r.nights || 1;
+      const totalPrice = Number(r.price) || 0;
+      // 1박당 요금 = 전체요금 / 박수 (균등 분배)
+      const pricePerNight = Math.round(totalPrice / nights);
+      revenue += totalPrice;
+      for (let i = 0; i < nights; i++) {
+        const ds = addDays(r.date, i);
+        const [y, m] = ds.split('-');
+        if (y === '2026') {
+          const mIdx = Number(m) - 1;
+          if (mIdx >= 0 && mIdx < 12) {
+            monthlyRoomStats[mIdx][r.room] += pricePerNight;
+            monthlyRoomStats[mIdx].total += pricePerNight;
           }
         }
       }
@@ -637,7 +642,18 @@ export default function App() {
                   const dayRes = dateStr ? (reservationMap[dateStr]||[]) : [];
                   return (
                     <div key={i}
-                      onClick={() => dateStr && (setFormData({...formData, date:dateStr}), setIsModalOpen(true))}
+                      onClick={() => {
+                        if (!dateStr) return;
+                        // 날짜 클릭 시 모든 상태 초기화
+                        setFormData({ date:dateStr, room:'Shell', name:'', phone:'010',
+                          adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접' });
+                        setEditTarget(null);
+                        setSelectedResId(null);
+                        setIsManualPrice(false);
+                        setManualPrice('');
+                        setRoomTouched(false);
+                        setIsModalOpen(true);
+                      }}
                       className={`min-h-[80px] md:min-h-[110px] p-1.5 border-r border-b border-slate-100 cursor-pointer hover:bg-blue-50/20 transition-all
                         ${!dateStr?'bg-slate-50/30':'bg-white'}`}>
                       {dateStr && (
@@ -795,21 +811,25 @@ export default function App() {
             <div className="mb-5">
               <h3 className="text-2xl font-black text-slate-900">{formData.date}</h3>
               <p className="text-blue-600 font-bold text-[10px] tracking-widest mt-0.5 uppercase">Daily Reservation View</p>
-              {/* 합계 / 개별 금액 표시 */}
+              {/* 합계 / 개별 금액 표시 - 해당 날짜 1박 요금 기준 */}
               {(reservationMap[formData.date]||[]).length > 0 && (
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
                   {selectedResId ? (
                     (() => {
                       const sel = (reservationMap[formData.date]||[]).find(r => r.id === selectedResId);
-                      return sel ? (
+                      if (!sel) return null;
+                      // 해당 날짜가 sel의 몇 번째 박인지 계산 → 해당 날짜 1박 요금
+                      const nightIdx = Math.round((new Date(formData.date+'T00:00:00') - new Date(sel.date+'T00:00:00')) / 86400000);
+                      const dayPrice = getPricePerNight(sel.room, formData.date);
+                      return (
                         <span className="px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-black">
-                          {sel.name}님 · ₩{(Number(sel.price)||0).toLocaleString()}
+                          {sel.name}님 · ₩{dayPrice.toLocaleString()} ({nightIdx+1}박째)
                         </span>
-                      ) : null;
+                      );
                     })()
                   ) : (
                     <span className="px-3 py-1.5 bg-slate-900 text-white rounded-full text-xs font-black">
-                      합계 · ₩{(reservationMap[formData.date]||[]).reduce((s,r)=>s+(Number(r.price)||0),0).toLocaleString()}
+                      합계 · ₩{(reservationMap[formData.date]||[]).reduce((s,r) => s + getPricePerNight(r.room, formData.date), 0).toLocaleString()}
                     </span>
                   )}
                   {selectedResId && (
