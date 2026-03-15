@@ -263,24 +263,29 @@ export default function App() {
     const handleBack = () => {
       window.history.pushState(null, '', window.location.href);
       const s = backStateRef.current;
+      // 모달 열림 → 모달 닫고 현황판
       if (s.isModalOpen) {
         setIsModalOpen(false);
         setEditTarget(null);
         setSelectedResId(null);
         setIsManualPrice(false);
         setManualPrice('');
+        setActiveTab('calendar');
         return;
       }
+      // 다른 탭 → 현황판
       if (s.activeTab !== 'calendar') {
         setActiveTab('calendar');
         return;
       }
-      if (s.exitConfirm) {
-        window.history.go(-2);
-      } else {
+      // 현황판 첫 번째 뒤로가기 → 메시지
+      if (!s.exitConfirm) {
         setExitConfirm(true);
         setTimeout(() => setExitConfirm(false), 3000);
+        return;
       }
+      // 현황판 두 번째 뒤로가기 → 종료
+      window.history.go(-2);
     };
     window.addEventListener('popstate', handleBack);
     return () => window.removeEventListener('popstate', handleBack);
@@ -470,6 +475,15 @@ export default function App() {
         </button>
       </div>
       <div className="space-y-2">
+        {/* 예정요금 표시 */}
+        <div className="px-1 flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-400">예정 요금</span>
+          <span className="text-base font-black text-slate-800">
+            {isManualPrice
+              ? `₩${(Number(manualPrice)||0).toLocaleString()} (직접입력)`
+              : `₩${totalPrice.toLocaleString()}`}
+          </span>
+        </div>
         {/* 가격 직접입력 토글 */}
         {isManualPrice && (
           <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl flex items-center gap-3">
@@ -813,11 +827,22 @@ export default function App() {
                     <div key={`${r.id}-${i}`}
                       onClick={() => {
                         if (selectedResId === r.id) {
+                          // 선택 해제 → 폼 초기화
                           setSelectedResId(null);
                           setEditTarget(null);
+                          setFormData({ date:formData.date, room:'Shell', name:'', phone:'010',
+                            adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접' });
+                          setIsManualPrice(false);
+                          setManualPrice('');
                         } else {
+                          // 선택 → 폼에 내용 채우기 (수정 대기 상태)
                           setSelectedResId(r.id);
-                          setEditTarget(null);
+                          setEditTarget(r.id);
+                          setFormData({ date:r.date, room:r.room, name:r.name, phone:r.phone||'010',
+                            adults:r.adults||0, kids:r.kids||0, bbq:r.bbq||false,
+                            nights:r.nights||1, memo:r.memo||'', path:r.path||'직접' });
+                          setIsManualPrice(false);
+                          setManualPrice('');
                         }
                       }}
                       className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-sm
@@ -844,19 +869,9 @@ export default function App() {
                             {r.path && <span className="bg-white/60 px-2 py-0.5 rounded-full">{r.path}</span>}
                           </div>
                         </div>
-                        {/* 수정/삭제 - 선택됐을 때만 표시 */}
+                        {/* 삭제 - 선택됐을 때만 표시 */}
                         {isSelected && (
                           <div className="flex gap-2 ml-2 shrink-0" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => {
-                              setEditTarget(r.id);
-                              setFormData({ date:r.date, room:r.room, name:r.name, phone:r.phone||'010',
-                                adults:r.adults||0, kids:r.kids||0, bbq:r.bbq||false,
-                                nights:r.nights||1, memo:r.memo||'', path:r.path||'직접' });
-                              setIsManualPrice(false);
-                              setManualPrice('');
-                            }} className="text-blue-500 p-2 bg-white/70 rounded-xl hover:bg-blue-500 hover:text-white transition-all text-[10px] font-black px-3">
-                              수정
-                            </button>
                             <button onClick={() => handleDelete(r.id)}
                               className="text-rose-500 p-2 bg-white/70 rounded-xl hover:bg-rose-500 hover:text-white transition-all">
                               <Trash2 size={16} />
@@ -877,7 +892,7 @@ export default function App() {
             {/* 신규/수정 폼 */}
             <div className="pt-6 border-t-2 border-slate-100">
               <h4 className="font-black text-md mb-5 text-blue-600 flex items-center gap-2">
-                <PlusCircle size={18} /> {editTarget ? "예약 수정" : "새 예약 등록"}
+                <PlusCircle size={18} /> {selectedResId ? "예약 수정 (클릭해제 시 신규등록)" : "새 예약 등록"}
               </h4>
               {renderForm(true)}
             </div>
