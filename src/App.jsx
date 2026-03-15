@@ -27,9 +27,9 @@ const isWeekendPrice = (dateStr) => {
   const nxt = new Date(d);
   nxt.setDate(d.getDate() + 1);
   const ns = `${nxt.getFullYear()}-${String(nxt.getMonth()+1).padStart(2,'0')}-${String(nxt.getDate()).padStart(2,'0')}`;
-  if (dow === 6) return true;                         // 규칙1: 토요일
-  if (HOLIDAYS.has(ns)) return true;                  // 규칙2: 다음날 공휴일
-  if (dow === 5 && HOLIDAYS.has(dateStr)) return true;// 규칙3: 공휴일인 금요일
+  if (dow === 6) return true;                                      // 규칙1: 토요일
+  if (HOLIDAYS.has(ns) && nxt.getDay() !== 6) return true;        // 규칙2: 다음날 공휴일 (토요일 공휴일 제외)
+  if (dow === 5 && HOLIDAYS.has(dateStr)) return true;             // 규칙3: 공휴일인 금요일
   return false;
 };
 
