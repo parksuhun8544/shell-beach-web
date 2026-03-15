@@ -182,7 +182,6 @@ export default function App() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
-  const [user, setUser] = useState(null);
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('calendar');
@@ -195,6 +194,7 @@ export default function App() {
   const [selectedResId, setSelectedResId] = useState(null); // 모달에서 선택된 예약 ID
   const [isManualPrice, setIsManualPrice] = useState(false);
   const [manualPrice, setManualPrice] = useState('');
+  const [roomTouched, setRoomTouched] = useState(false); // 방 선택 여부
   const [formData, setFormData] = useState({
     date: getLocalTodayStr(), room:'Shell', name:'', phone:'010',
     adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접'
@@ -205,15 +205,10 @@ export default function App() {
     setTimeout(() => setMessage(null), 3000);
   };
 
-  // PIN
-  useEffect(() => {
-    if (sessionStorage.getItem('shellBeachUnlocked') === 'true') setIsUnlocked(true);
-  }, []);
-
+  // PIN - sessionStorage 제거, 항상 새로 입력
   const handleLogin = (e) => {
     e.preventDefault();
     if (pinInput === '9631') {
-      sessionStorage.setItem('shellBeachUnlocked','true');
       setIsUnlocked(true);
     } else {
       setPinError(true);
@@ -221,13 +216,13 @@ export default function App() {
     }
   };
 
-  // Firebase init
+  // Firebase init - isUnlocked 확정 후 1회만 실행
   useEffect(() => {
     if (!isUnlocked) return;
+    let unsubSnapshot = null;
     const initApp = async () => {
       try {
         const currentUser = (await signInAnonymously(auth)).user;
-        setUser(currentUser);
         const colRef = collection(db,'reservations');
         const snap = await getDocs(colRef);
         if (snap.empty) {
@@ -237,55 +232,61 @@ export default function App() {
           });
           await batch.commit();
         }
-      } catch(e) { console.error(e); }
+        // Firebase 초기화 완료 후 snapshot 구독 시작
+        unsubSnapshot = onSnapshot(collection(db,'reservations'), (snap) => {
+          setReservations(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+          setLoading(false);
+        }, (e) => { console.error(e); setLoading(false); });
+      } catch(e) { console.error(e); setLoading(false); }
     };
     initApp();
-    return onAuthStateChanged(auth, setUser);
+    return () => { if (unsubSnapshot) unsubSnapshot(); };
   }, [isUnlocked]);
 
+  // 뒤로가기 - PIN 해제 후 1회 등록, ref로 최신 상태 참조
+  const backStateRef = React.useRef({ isModalOpen, activeTab, exitConfirm, loading });
   useEffect(() => {
-    if (!isUnlocked || !user) return;
-    return onSnapshot(collection(db,'reservations'), (snap) => {
-      setReservations(snap.docs.map(d => ({ id:d.id, ...d.data() })));
-      setLoading(false);
-    }, (e) => { console.error(e); setLoading(false); });
-  }, [user, isUnlocked]);
-
-  // 뒤로가기 처리 - ref로 최신 상태 참조 (재마운트 방지)
-  const backStateRef = React.useRef({ isModalOpen, activeTab, exitConfirm });
-  useEffect(() => {
-    backStateRef.current = { isModalOpen, activeTab, exitConfirm };
-  }, [isModalOpen, activeTab, exitConfirm]);
+    backStateRef.current = { isModalOpen, activeTab, exitConfirm, loading };
+  }, [isModalOpen, activeTab, exitConfirm, loading]);
 
   useEffect(() => {
     if (!isUnlocked) return;
+    // history 스택에 현재 위치 고정
     window.history.pushState(null, '', window.location.href);
     const handleBack = () => {
-      window.history.pushState(null, '', window.location.href);
       const s = backStateRef.current;
-      // 모달 열림 → 모달 닫고 현황판
+      // 로딩 중이면 차단
+      if (s.loading) {
+        window.history.pushState(null, '', window.location.href);
+        return;
+      }
+      // 모달 열림 → 닫고 현황판
       if (s.isModalOpen) {
         setIsModalOpen(false);
         setEditTarget(null);
         setSelectedResId(null);
         setIsManualPrice(false);
         setManualPrice('');
+        setRoomTouched(false);
         setActiveTab('calendar');
+        window.history.pushState(null, '', window.location.href);
         return;
       }
       // 다른 탭 → 현황판
       if (s.activeTab !== 'calendar') {
         setActiveTab('calendar');
+        window.history.pushState(null, '', window.location.href);
         return;
       }
-      // 현황판 첫 번째 뒤로가기 → 메시지
+      // 현황판 첫 번째 → 종료 메시지
       if (!s.exitConfirm) {
         setExitConfirm(true);
         setTimeout(() => setExitConfirm(false), 3000);
+        window.history.pushState(null, '', window.location.href);
         return;
       }
-      // 현황판 두 번째 뒤로가기 → 종료
-      window.history.go(-2);
+      // 현황판 두 번째 → 종료 (history 조작 없이 실제 back)
+      window.history.back();
     };
     window.addEventListener('popstate', handleBack);
     return () => window.removeEventListener('popstate', handleBack);
@@ -366,6 +367,7 @@ export default function App() {
       setSelectedResId(null);
       setIsManualPrice(false);
       setManualPrice('');
+      setRoomTouched(false);
       if (activeTab==='add') setActiveTab('calendar');
     } catch(e) { showMsg("실패", "error"); }
   };
@@ -404,7 +406,7 @@ export default function App() {
           const full = isRoomFull(r.id, formData.date, editTarget);
           return (
             <button key={r.id} type="button" disabled={full}
-              onClick={() => setFormData({ ...formData, room:r.id })}
+              onClick={() => { setFormData({ ...formData, room:r.id }); setRoomTouched(true); }}
               className={`p-3 rounded-xl font-black border-2 transition-all flex flex-col items-center
                 ${full ? 'bg-slate-50 border-slate-100 text-slate-300 opacity-50' :
                   formData.room===r.id ? 'bg-blue-600 text-white border-blue-600 shadow-md' :
@@ -475,15 +477,17 @@ export default function App() {
         </button>
       </div>
       <div className="space-y-2">
-        {/* 예정요금 표시 */}
-        <div className="px-1 flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-400">예정 요금</span>
-          <span className="text-base font-black text-slate-800">
-            {isManualPrice
-              ? `₩${(Number(manualPrice)||0).toLocaleString()} (직접입력)`
-              : `₩${totalPrice.toLocaleString()}`}
-          </span>
-        </div>
+        {/* 예정요금 - 방 선택 후에만 표시 */}
+        {roomTouched && (
+          <div className="px-1 flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-400">예정 요금</span>
+            <span className="text-base font-black text-slate-800">
+              {isManualPrice
+                ? `₩${(Number(manualPrice)||0).toLocaleString()} (직접입력)`
+                : `₩${totalPrice.toLocaleString()}`}
+            </span>
+          </div>
+        )}
         {/* 가격 직접입력 토글 */}
         {isManualPrice && (
           <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl flex items-center gap-3">
@@ -779,10 +783,10 @@ export default function App() {
       {/* 모달 */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
-          onClick={() => { setIsModalOpen(false); setEditTarget(null); setSelectedResId(null); setIsManualPrice(false); setManualPrice(''); }}>
+          onClick={() => { setIsModalOpen(false); setEditTarget(null); setSelectedResId(null); setIsManualPrice(false); setManualPrice(''); setRoomTouched(false); }}>
           <div className="bg-white w-full max-w-xl rounded-[2rem] p-6 md:p-8 relative overflow-y-auto max-h-[92vh] shadow-2xl"
             onClick={e => e.stopPropagation()}>
-            <button onClick={() => { setIsModalOpen(false); setEditTarget(null); setSelectedResId(null); setIsManualPrice(false); setManualPrice(''); }}
+            <button onClick={() => { setIsModalOpen(false); setEditTarget(null); setSelectedResId(null); setIsManualPrice(false); setManualPrice(''); setRoomTouched(false); }}
               className="absolute top-5 right-5 p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-rose-500 hover:text-white transition-all">
               <X size={18} />
             </button>
@@ -834,6 +838,7 @@ export default function App() {
                             adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접' });
                           setIsManualPrice(false);
                           setManualPrice('');
+                          setRoomTouched(false);
                         } else {
                           // 선택 → 폼에 내용 채우기 (수정 대기 상태)
                           setSelectedResId(r.id);
@@ -843,6 +848,7 @@ export default function App() {
                             nights:r.nights||1, memo:r.memo||'', path:r.path||'직접' });
                           setIsManualPrice(false);
                           setManualPrice('');
+                          setRoomTouched(true); // 기존 예약 = 이미 방 선택됨
                         }
                       }}
                       className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-sm
