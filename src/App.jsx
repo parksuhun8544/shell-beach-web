@@ -823,15 +823,17 @@ export default function App() {
                       // 해당 날짜가 sel의 몇 번째 박인지 계산 → 해당 날짜 1박 요금
                       const nightIdx = Math.round((new Date(formData.date+'T00:00:00') - new Date(sel.date+'T00:00:00')) / 86400000);
                       const dayPrice = getPricePerNight(sel.room, formData.date);
+                      // 추가요금은 체크인 날짜에만 표시
+                      const extraPrice = nightIdx === 0 ? (sel.adults||0)*20000 + (sel.kids||0)*15000 + (sel.bbq?30000:0) : 0;
                       return (
                         <span className="px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-black">
-                          {sel.name}님 · ₩{dayPrice.toLocaleString()} ({nightIdx+1}박째)
+                          {sel.name}님 · ₩{(dayPrice + extraPrice).toLocaleString()} ({nightIdx+1}박째)
                         </span>
                       );
                     })()
                   ) : (
                     <span className="px-3 py-1.5 bg-slate-900 text-white rounded-full text-xs font-black">
-                      합계 · ₩{(reservationMap[formData.date]||[]).reduce((s,r) => s + getPricePerNight(r.room, formData.date), 0).toLocaleString()}
+                      합계 · ₩{(reservationMap[formData.date]||[]).reduce((s,r) => s + getPricePerNight(r.room, formData.date) + (r.adults||0)*20000 + (r.kids||0)*15000 + (r.bbq?30000:0), 0).toLocaleString()}
                     </span>
                   )}
                   {selectedResId && (
@@ -882,7 +884,7 @@ export default function App() {
                             <span className="font-black text-base">{r.room}</span>
                             <span className="font-bold text-sm text-slate-600">{r.name}님</span>
                             <span className="font-black text-sm text-slate-800">
-                              ₩{getPricePerNight(r.room, formData.date).toLocaleString()}
+                              ₩{(getPricePerNight(r.room, formData.date) + (r.adults||0)*20000 + (r.kids||0)*15000 + (r.bbq?30000:0)).toLocaleString()}
                             </span>
                           </div>
                           <div className="text-[10px] font-bold mt-1.5 opacity-70 flex items-center gap-2 flex-wrap">
