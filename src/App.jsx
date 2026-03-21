@@ -329,25 +329,55 @@ export default function App() {
     setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(false);
   };
 
+  // ref로 최신 state를 항상 참조 → 클로저 캡처 문제 완전 차단
+  const saveStateRef = React.useRef({});
+  useEffect(() => {
+    saveStateRef.current = {
+      isManualPrice, manualPrice, manualPriceMode,
+      formData, editTarget, activeTab,
+      finalManualPrice, autoTotalPrice
+    };
+  });
+
   const handleSave = async (e) => {
     e.preventDefault();
-    for (let i = 0; i < formData.nights; i++) {
-      if (isRoomFull(formData.room, addDays(formData.date, i), editTarget)) {
+    const s = saveStateRef.current;
+    const { formData: fd, editTarget: et, activeTab: at } = s;
+
+    for (let i = 0; i < fd.nights; i++) {
+      if (isRoomFull(fd.room, addDays(fd.date, i), et)) {
         showMsg("해당 기간에 이미 예약된 객실입니다.", "error"); return;
       }
     }
-    // ── 핵심 수정: 직접입력 시 finalManualPrice, 자동계산 시 autoTotalPrice ──
-    const savePrice = isManualPrice ? finalManualPrice : autoTotalPrice;
+
+    // ── 저장 금액 계산 ──
+    // 직접입력: 입력값을 nights로 나눈 1박 단가를 price로 저장
+    //   → stats/달력 표시 모두 price/nights로 환산하므로 1박 단가 기준이 정확
+    // 자동계산: autoTotalPrice 그대로
+    let savePrice;
+    if (s.isManualPrice) {
+      const raw = Number(s.manualPrice) || 0;
+      if (s.manualPriceMode === 'pernight') {
+        // 1박 단가 입력 → nights * 단가 + 추가요금
+        savePrice = raw * fd.nights + (fd.adults*20000 + fd.kids*15000 + (fd.bbq?30000:0));
+      } else {
+        // 합계 입력 → 입력값 그대로 저장
+        savePrice = raw;
+      }
+    } else {
+      savePrice = s.autoTotalPrice;
+    }
+
     try {
-      if (editTarget) {
-        await updateDoc(doc(db,'reservations',editTarget), { ...formData, price:savePrice });
+      if (et) {
+        await updateDoc(doc(db,'reservations',et), { ...fd, price:savePrice });
         showMsg("수정되었습니다.", "success");
       } else {
-        await addDoc(collection(db,'reservations'), { ...formData, price:savePrice, createdAt:serverTimestamp() });
+        await addDoc(collection(db,'reservations'), { ...fd, price:savePrice, createdAt:serverTimestamp() });
         showMsg("예약이 저장되었습니다.", "success");
       }
       resetModal();
-      if (activeTab==='add') setActiveTab('calendar');
+      if (at==='add') setActiveTab('calendar');
     } catch { showMsg("저장 실패", "error"); }
   };
 
@@ -525,18 +555,18 @@ export default function App() {
             {manualPrice && Number(manualPrice) > 0 && (
               <div className="text-[11px] font-bold text-amber-700 bg-amber-100 px-3 py-2 rounded-xl leading-relaxed">
                 {manualPriceMode === 'total' ? (
-                  <>
-                    저장: ₩{Number(manualPrice).toLocaleString()}
-                    {formData.nights > 1 && (
-                      <span className="ml-2 opacity-70">
-                        (1박 환산 ≈ ₩{Math.round(Number(manualPrice)/formData.nights).toLocaleString()})
-                      </span>
-                    )}
-                  </>
+                  formData.nights > 1 ? (
+                    <>
+                      ₩{Number(manualPrice).toLocaleString()} ÷ {formData.nights}박
+                      {' '}→ 1박 ₩{Math.round(Number(manualPrice)/formData.nights).toLocaleString()}으로 저장
+                    </>
+                  ) : (
+                    <>저장: ₩{Number(manualPrice).toLocaleString()}</>
+                  )
                 ) : (
                   <>
                     1박 ₩{Number(manualPrice).toLocaleString()} × {formData.nights}박
-                    {extraPrice > 0 && <> + 추가 ₩{extraPrice.toLocaleString()}</>}
+                    {extraPrice > 0 && <> + 추가요금 ₩{extraPrice.toLocaleString()}</>}
                     {' '}= 저장: ₩{finalManualPrice.toLocaleString()}
                   </>
                 )}
