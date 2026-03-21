@@ -329,20 +329,21 @@ export default function App() {
     setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(false);
   };
 
-  // ref로 최신 state를 항상 참조 → 클로저 캡처 문제 완전 차단
+  // ── 렌더 중 동기 업데이트 (useEffect 사용 금지 - 비동기 타이밍 문제)
   const saveStateRef = React.useRef({});
-  useEffect(() => {
-    saveStateRef.current = {
-      isManualPrice, manualPrice, manualPriceMode,
-      formData, editTarget, activeTab,
-      finalManualPrice, autoTotalPrice
-    };
-  });
+  saveStateRef.current = {
+    isManualPrice, manualPrice, manualPriceMode,
+    formData, editTarget, activeTab,
+    autoTotalPrice, extraPrice
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
-    const s = saveStateRef.current;
-    const { formData: fd, editTarget: et, activeTab: at } = s;
+    const {
+      isManualPrice: isMp, manualPrice: mp, manualPriceMode: mpMode,
+      formData: fd, editTarget: et, activeTab: at,
+      autoTotalPrice: autoP, extraPrice: extra
+    } = saveStateRef.current;
 
     for (let i = 0; i < fd.nights; i++) {
       if (isRoomFull(fd.room, addDays(fd.date, i), et)) {
@@ -350,22 +351,16 @@ export default function App() {
       }
     }
 
-    // ── 저장 금액 계산 ──
-    // 직접입력: 입력값을 nights로 나눈 1박 단가를 price로 저장
-    //   → stats/달력 표시 모두 price/nights로 환산하므로 1박 단가 기준이 정확
-    // 자동계산: autoTotalPrice 그대로
     let savePrice;
-    if (s.isManualPrice) {
-      const raw = Number(s.manualPrice) || 0;
-      if (s.manualPriceMode === 'pernight') {
-        // 1박 단가 입력 → nights * 단가 + 추가요금
-        savePrice = raw * fd.nights + (fd.adults*20000 + fd.kids*15000 + (fd.bbq?30000:0));
+    if (isMp) {
+      const raw = Number(mp) || 0;
+      if (mpMode === 'pernight') {
+        savePrice = raw * fd.nights + extra;
       } else {
-        // 합계 입력 → 입력값 그대로 저장
         savePrice = raw;
       }
     } else {
-      savePrice = s.autoTotalPrice;
+      savePrice = autoP;
     }
 
     try {
