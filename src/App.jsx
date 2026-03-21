@@ -874,7 +874,7 @@ export default function App() {
                       const sel = (reservationMap[formData.date]||[]).find(r => r.id === selectedResId);
                       if (!sel) return null;
                       const nightIdx = Math.round((new Date(formData.date+'T00:00:00') - new Date(sel.date+'T00:00:00')) / 86400000);
-                      const dayPrice = getPricePerNight(sel.room, formData.date);
+                      const dayPrice = Math.round((Number(sel.price)||0) / (sel.nights||1));
                       const extraCard = nightIdx === 0 ? (sel.adults||0)*20000 + (sel.kids||0)*15000 + (sel.bbq?30000:0) : 0;
                       return (
                         <span className="px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-black">
@@ -884,7 +884,12 @@ export default function App() {
                     })()
                   ) : (
                     <span className="px-3 py-1.5 bg-slate-900 text-white rounded-full text-xs font-black">
-                      합계 · ₩{(reservationMap[formData.date]||[]).reduce((s,r) => s + getPricePerNight(r.room, formData.date) + (r.adults||0)*20000 + (r.kids||0)*15000 + (r.bbq?30000:0), 0).toLocaleString()}
+                      합계 · ₩{(reservationMap[formData.date]||[]).reduce((s,r) => {
+                          const nightIdx = Math.round((new Date(formData.date+'T00:00:00') - new Date(r.date+'T00:00:00')) / 86400000);
+                          const dayPrice = Math.round((Number(r.price)||0) / (r.nights||1));
+                          const extra = nightIdx === 0 ? (r.adults||0)*20000 + (r.kids||0)*15000 + (r.bbq?30000:0) : 0;
+                          return s + dayPrice + extra;
+                        }, 0).toLocaleString()}
                     </span>
                   )}
                   {selectedResId && (
@@ -926,7 +931,12 @@ export default function App() {
                             <span className="font-black text-base">{r.room}</span>
                             <span className="font-bold text-sm text-slate-600">{r.name}님</span>
                             <span className="font-black text-sm text-slate-800">
-                              ₩{(getPricePerNight(r.room, formData.date) + (r.adults||0)*20000 + (r.kids||0)*15000 + (r.bbq?30000:0)).toLocaleString()}
+                              ₩{(() => {
+                                const nightIdx = Math.round((new Date(formData.date+'T00:00:00') - new Date(r.date+'T00:00:00')) / 86400000);
+                                const dayPrice = Math.round((Number(r.price)||0) / (r.nights||1));
+                                const extra = nightIdx === 0 ? (r.adults||0)*20000 + (r.kids||0)*15000 + (r.bbq?30000:0) : 0;
+                                return (dayPrice + extra).toLocaleString();
+                              })()}
                             </span>
                           </div>
                           <div className="text-[10px] font-bold mt-1.5 opacity-70 flex items-center gap-2 flex-wrap">
