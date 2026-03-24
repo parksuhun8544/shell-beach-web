@@ -1060,12 +1060,13 @@ export default function App() {
                 const csv = '\uFEFF' + [header, ...rows].join('\n');
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8;' }));
-                a.download = `shellbeach_${new Date().toISOString().slice(0,10)}.csv`;
+                a.download = 'shellbeach_' + new Date().toISOString().slice(0,10) + '.csv';
                 a.click();
               }}
                 className="w-full flex items-center justify-center gap-2 p-4 bg-slate-800 text-white rounded-2xl font-bold hover:bg-slate-700 transition-all">
                 <Download size={18} /> 전체 예약 CSV 내보내기 ({reservations.length}건)
               </button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
                 <div className="bg-slate-900 p-8 rounded-[1.5rem] text-white shadow-xl relative overflow-hidden">
                   <div className="absolute -right-4 -top-4 opacity-10"><Wallet size={100} /></div>
                   <p className="text-blue-300 font-bold text-xs">{viewDate.getFullYear()} 누적 총 매출</p>
