@@ -7,7 +7,7 @@ import {
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import {
   Calendar, PlusCircle, BarChart3, ChevronLeft,
-  ChevronRight, BedDouble, X, TrendingUp, Users, Wallet, Trash2,
+  ChevronRight, BedDouble, X, Users, Wallet, Trash2,
   Search, Check, TableProperties, Lock, Phone, Settings, Download
 } from 'lucide-react';
 
@@ -364,12 +364,12 @@ function SettingsTab({ rateConfig, onSave }) {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex flex-col">
                       <label className="text-[10px] text-slate-400 mb-1">평일</label>
-                      <input type="number" value={s[`${r}_w`]} onChange={e => updateSeason(idx,`${r}_w`,e.target.value)}
+                      <input type="number" value={s[r+'_w']} onChange={e => updateSeason(idx, r+'_w', e.target.value)}
                         className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
                     </div>
                     <div className="flex flex-col">
                       <label className="text-[10px] text-slate-400 mb-1">주말</label>
-                      <input type="number" value={s[`${r}_wk`]} onChange={e => updateSeason(idx,`${r}_wk`,e.target.value)}
+                      <input type="number" value={s[r+'_wk']} onChange={e => updateSeason(idx, r+'_wk', e.target.value)}
                         className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
                     </div>
                   </div>
@@ -653,20 +653,7 @@ export default function App() {
     showMsg("삭제 완료", "success");
   };
 
-  const migrateAllPrices = async () => {
-    if (!window.confirm(`전체 ${reservations.length}건 가격을 현재 요금표 기준으로 재계산합니다.`)) return;
-    setLoading(true);
-    const batch = writeBatch(db);
-    reservations.forEach(r => {
-      if (!r.date||!r.room||!r.nights) return;
-      let p = 0;
-      for (let i = 0; i < r.nights; i++) p += getPricePerNight(r.room, addDays(r.date, i));
-      batch.update(doc(db,'reservations',r.id), { price:p });
-    });
-    await batch.commit();
-    showMsg(`${reservations.length}건 업데이트 완료`, 'success');
-    setLoading(false);
-  };
+
 
   const handlePhoneChange = (e) => {
     let val = e.target.value.replace(/[^0-9]/g,'');
@@ -917,11 +904,7 @@ export default function App() {
             <span className="text-sm">{item.label}</span>
           </button>
         ))}
-        <button onClick={migrateAllPrices}
-          className="mt-auto flex items-center gap-3 p-3.5 rounded-xl font-bold text-amber-600 hover:bg-amber-50 transition-all">
-          <TrendingUp size={18} />
-          <span className="text-sm">가격 일괄 재계산</span>
-        </button>
+
       </nav>
 
       {/* 메인 */}
