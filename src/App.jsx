@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getFirestore, collection, addDoc, onSnapshot,
-  serverTimestamp, deleteDoc, doc, updateDoc, getDocs, writeBatch, setDoc
+  serverTimestamp, deleteDoc, doc, updateDoc, getDocs, writeBatch, setDoc, getDoc
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import {
@@ -13,7 +13,6 @@ import {
 
 // --- 1. 공휴일 및 요금 로직 ---
 
-// 기본 요금 설정 (Firebase에 없을 경우 사용)
 const DEFAULT_RATE_CONFIG = {
   holidays: [
     '2026-01-01','2026-01-28','2026-01-29','2026-01-30',
@@ -53,23 +52,79 @@ const getPricePerNightFn = (room, dateStr, rateConfig) => {
   const isFri = dt.getDay() === 5;
   const wk = isWeekendPriceFn(dateStr, holidaySet);
 
-  // seasons 배열을 순서대로 검사 (peak 먼저)
   for (const s of (cfg.seasons || [])) {
     const [sm, sd] = s.start.split('-').map(Number);
     const [em, ed] = s.end.split('-').map(Number);
     const startMmdd = sm * 100 + sd;
     const endMmdd = em * 100 + ed;
     if (mmdd >= startMmdd && mmdd <= endMmdd) {
-      if (s.weekendSame) return s[room]; // 성수기: 평일=주말
+      if (s.weekendSame) return s[room];
       if (s.beachFriSpecial && room === 'Beach' && isFri) return s.beachFriSpecial;
       return wk ? s[`${room}_wk`] : s[`${room}_w`];
     }
   }
-  // fallback: 비수기
   const off = cfg.seasons?.find(s => s.id === 'offpeak');
   if (off) return wk ? off[`${room}_wk`] : off[`${room}_w`];
   return 0;
 };
+
+// --- 공공데이터포털 특일 API ---
+const HOLIDAY_API_KEY = '4376d57998faa2ef18ba09c939333ce2ab30b183d552bc791b4799735b3021c3';
+
+async function fetchHolidaysFromAPI(year) {
+  const url = `https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo`
+    + `?solYear=${year}&numOfRows=100&ServiceKey=${HOLIDAY_API_KEY}&_type=json`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`API 오류: ${res.status}`);
+  const json = await res.json();
+  const items = json?.response?.body?.items?.item;
+  if (!items) return [];
+  const arr = Array.isArray(items) ? items : [items];
+  return arr.map(item => {
+    const s = String(item.locdate);
+    return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+  });
+}
+
+// 하루 1회 + 당해·내년 2개년 자동 갱신
+async function refreshHolidaysIfNeeded(db, currentRateConfig, setRateConfig, showMsg) {
+  try {
+    const metaRef = doc(db, 'config', 'holidayMeta');
+    const metaSnap = await getDoc(metaRef);
+    const now = Date.now();
+    const lastUpdated = metaSnap.exists() ? (metaSnap.data().updatedAt || 0) : 0;
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+
+    if (now - lastUpdated < TWENTY_FOUR_HOURS) return; // 24시간 미경과 → 스킵
+
+    const thisYear = new Date().getFullYear();
+    const nextYear = thisYear + 1;
+
+    const [h1, h2] = await Promise.all([
+      fetchHolidaysFromAPI(thisYear),
+      fetchHolidaysFromAPI(nextYear),
+    ]);
+
+    const freshHolidays = [...new Set([...h1, ...h2])].sort();
+
+    // 기존 holidays에서 당해·내년 제거 후 API 결과로 교체
+    const otherYears = (currentRateConfig.holidays || []).filter(h =>
+      !h.startsWith(String(thisYear)) && !h.startsWith(String(nextYear))
+    );
+    const newHolidays = [...new Set([...otherYears, ...freshHolidays])].sort();
+
+    const newCfg = { ...currentRateConfig, holidays: newHolidays };
+
+    await setDoc(doc(db, 'config', 'rateConfig'), newCfg);
+    await setDoc(metaRef, { updatedAt: now });
+    setRateConfig(newCfg);
+
+    showMsg(`공휴일 자동 갱신 완료 (${thisYear}·${nextYear}년)`, 'success');
+  } catch (err) {
+    // 갱신 실패해도 앱 동작에 영향 없음 — 기존 데이터 유지
+    console.warn('공휴일 API 갱신 실패:', err.message);
+  }
+}
 
 // --- 2. 상수 ---
 const ROOMS = [
@@ -197,92 +252,24 @@ const addDays = (ds, n) => {
 };
 
 // ─────────────────────────────────────────
-// 대한민국 법정공휴일 자동 계산
-// ─────────────────────────────────────────
-function getKoreanHolidays(year) {
-  const y = Number(year);
-  const holidays = [];
-
-  // 고정 공휴일
-  const fixed = ['01-01','03-01','05-05','06-06','08-15','10-03','10-09','12-25'];
-  fixed.forEach(d => holidays.push(`${y}-${d}`));
-
-  // 어린이날 대체공휴일 (05-05가 토/일이면 다음 월요일)
-  const cc = new Date(y, 4, 5).getDay(); // 5월5일 요일
-  if (cc === 0) holidays.push(`${y}-05-06`);
-  if (cc === 6) holidays.push(`${y}-05-07`);
-
-  // 음력 공휴일 계산 (근사값 - 실제 음력 변환)
-  const lunarToSolar = (lunarMonth, lunarDay) => {
-    // 음력→양력 근사 오프셋 테이블 (2024~2027)
-    const offsets = {
-      2024: { '01-01':'02-10', '01-14':'02-23', '01-15':'02-24', '04-08':'05-15', '07-15':'08-18', '08-14':'09-16', '08-15':'09-17', '08-16':'09-18' },
-      2025: { '01-01':'01-29', '01-14':'02-11', '01-15':'02-12', '04-08':'05-05', '07-15':'08-10', '08-14':'10-05', '08-15':'10-06', '08-16':'10-07' },
-      2026: { '01-01':'02-17', '01-14':'03-02', '01-15':'03-03', '04-08':'04-24', '07-15':'08-29', '08-14':'09-23', '08-15':'09-24', '08-16':'09-25' },
-      2027: { '01-01':'02-06', '01-14':'02-19', '01-15':'02-20', '04-08':'04-14', '07-15':'08-19', '08-14':'10-13', '08-15':'10-14', '08-16':'10-15' },
-    };
-    const key = `${String(lunarMonth).padStart(2,'0')}-${String(lunarDay).padStart(2,'0')}`;
-    return offsets[y]?.[key] || null;
-  };
-
-  // 설날 (음력 1/1 전날, 당일, 다음날)
-  [['01','14'],['01','15'],['01','01']].forEach(([m,d]) => {
-    const s = lunarToSolar(Number(m),Number(d));
-    if (s) holidays.push(`${y}-${s}`);
-  });
-  // 부처님오신날 (음력 4/8)
-  const b = lunarToSolar(4,8);
-  if (b) holidays.push(`${y}-${b}`);
-  // 백중 (음력 7/15) → 현재 법정공휴일 아님, 제외
-  // 추석 (음력 8/14,15,16)
-  [['08','14'],['08','15'],['08','16']].forEach(([m,d]) => {
-    const s = lunarToSolar(Number(m),Number(d));
-    if (s) holidays.push(`${y}-${s}`);
-  });
-
-  // 대체공휴일: 설날/추석이 일요일이면 다음날
-  const addSubstitute = (dateStr) => {
-    const d = new Date(dateStr+'T00:00:00');
-    if (d.getDay() === 0) {
-      const next = new Date(d); next.setDate(d.getDate()+1);
-      const ns = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`;
-      if (!holidays.includes(ns)) holidays.push(ns);
-    }
-  };
-
-  // 현충일 대체공휴일 (2022년부터 적용, 06-06이 일요일이면)
-  const mc = new Date(y, 5, 6).getDay();
-  if (mc === 0) holidays.push(`${y}-06-07`);
-
-  // 선거일 등 임시공휴일은 수동 추가
-
-  return [...new Set(holidays)].sort();
-}
-
-// ─────────────────────────────────────────
-// 요금 설정 탭 컴포넌트
+// 요금 설정 탭 컴포넌트 (자동적용 버튼 제거됨)
 // ─────────────────────────────────────────
 function SettingsTab({ rateConfig, onSave }) {
   const [cfg, setCfg] = React.useState(() => JSON.parse(JSON.stringify(rateConfig)));
   const [holidayInput, setHolidayInput] = React.useState('');
-  const [autoYear, setAutoYear] = React.useState(new Date().getFullYear());
   const [dirty, setDirty] = React.useState(false);
+
+  // rateConfig prop이 외부에서 바뀌면 (API 자동갱신) 로컬 state 동기화
+  React.useEffect(() => {
+    setCfg(JSON.parse(JSON.stringify(rateConfig)));
+    setDirty(false);
+  }, [rateConfig]);
 
   const update = (newCfg) => { setCfg(newCfg); setDirty(true); };
 
   const updateSeason = (idx, field, val) => {
     const s = JSON.parse(JSON.stringify(cfg));
     s.seasons[idx][field] = val === '' ? val : (isNaN(Number(val)) ? val : Number(val));
-    update(s);
-  };
-
-  // 공휴일 자동 적용
-  const applyAutoHolidays = () => {
-    const generated = getKoreanHolidays(autoYear);
-    const s = JSON.parse(JSON.stringify(cfg));
-    // 해당 연도 기존 항목 제거 후 새로 삽입
-    const otherYears = s.holidays.filter(h => !h.startsWith(String(autoYear)));
-    s.holidays = [...new Set([...otherYears, ...generated])].sort();
     update(s);
   };
 
@@ -301,8 +288,6 @@ function SettingsTab({ rateConfig, onSave }) {
     s.holidays = s.holidays.filter(x => x !== h);
     update(s);
   };
-
-  const ROOM_LABELS = { Shell:'Shell', Beach:'Beach', Pine:'Pine' };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-8">
@@ -327,7 +312,6 @@ function SettingsTab({ rateConfig, onSave }) {
                 s.id==='pre1'||s.id==='pre2'?'bg-amber-100 text-amber-700':
                 'bg-slate-100 text-slate-600'}`}>{s.label}</span>
           </div>
-          {/* 날짜 구간 */}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col">
               <label className="text-[10px] font-bold text-slate-400 mb-1">시작 (MM-DD)</label>
@@ -342,7 +326,6 @@ function SettingsTab({ rateConfig, onSave }) {
                 className="p-2.5 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
             </div>
           </div>
-          {/* 단가 */}
           {s.weekendSame ? (
             <div>
               <label className="text-[10px] font-bold text-slate-400 mb-2 block">단가 (평일=주말)</label>
@@ -387,30 +370,21 @@ function SettingsTab({ rateConfig, onSave }) {
         </div>
       ))}
 
-      {/* 공휴일 관리 */}
+      {/* 공휴일 관리 — 자동갱신 안내 + 수동 추가만 */}
       <div className="bg-white p-6 rounded-[1.5rem] border border-slate-200 shadow-sm space-y-4">
         <h3 className="font-black text-slate-800">공휴일 목록</h3>
 
-        {/* 자동 계산 */}
-        <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl space-y-2">
-          <p className="text-xs font-black text-blue-700">연도별 자동 적용</p>
-          <p className="text-[11px] text-blue-500">법정공휴일 + 대체공휴일 자동 계산. 동일 연도 기존 항목 대체.</p>
-          <div className="flex gap-2">
-            <input type="number" value={autoYear} onChange={e => setAutoYear(e.target.value)}
-              min="2024" max="2030"
-              className="w-28 p-2.5 bg-white border-2 border-blue-300 rounded-xl font-black text-sm text-center outline-none focus:ring-2 ring-blue-500" />
-            <button onClick={applyAutoHolidays}
-              className="flex-1 py-2.5 bg-blue-600 text-white font-black rounded-xl text-sm hover:bg-blue-500 transition-all">
-              {autoYear}년 자동 적용
-            </button>
-          </div>
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl">
+          <p className="text-xs font-black text-blue-700">자동 갱신 활성화됨</p>
+          <p className="text-[11px] text-blue-500 mt-1">
+            공공데이터포털 API 기반 · 앱 로드 시 24시간 주기로 당해·내년도 자동 갱신
+          </p>
         </div>
 
-        {/* 수동 추가 */}
         <div className="flex gap-2">
           <input value={holidayInput} onChange={e => setHolidayInput(e.target.value)}
             onKeyDown={e => e.key==='Enter' && addHoliday()}
-            placeholder="YYYY-MM-DD 직접 추가" maxLength={10}
+            placeholder="YYYY-MM-DD 임시공휴일 수동 추가" maxLength={10}
             className="flex-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
           <button onClick={addHoliday}
             className="px-4 py-3 bg-slate-700 text-white font-black rounded-xl text-sm hover:bg-slate-600 transition-all">
@@ -418,7 +392,6 @@ function SettingsTab({ rateConfig, onSave }) {
           </button>
         </div>
 
-        {/* 목록 */}
         <div className="flex flex-wrap gap-2 max-h-52 overflow-y-auto">
           {cfg.holidays.map(h => (
             <span key={h} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
@@ -455,13 +428,9 @@ export default function App() {
   const [exitConfirm, setExitConfirm] = useState(false);
   const [selectedResId, setSelectedResId] = useState(null);
 
-  // ── 가격 직접입력 상태 ──
   const [isManualPrice, setIsManualPrice] = useState(false);
   const [manualPrice, setManualPrice] = useState('');
-  // 'total' : 합계 입력 → 그대로 저장 (1/N 미리보기만)
-  // 'pernight' : 1박 단가 입력 → nights * 단가 + 추가요금 저장
   const [manualPriceMode, setManualPriceMode] = useState('total');
-
   const [roomTouched, setRoomTouched] = useState(false);
   const [formData, setFormData] = useState({
     date: getLocalTodayStr(), room:'Shell', name:'', phone:'010',
@@ -492,9 +461,15 @@ export default function App() {
           INITIAL_DATA.forEach(data => batch.set(doc(colRef), { ...data, createdAt: serverTimestamp() }));
           await batch.commit();
         }
-        // rateConfig 로드 (없으면 DEFAULT 사용)
+        // rateConfig 로드
+        let loadedCfg = DEFAULT_RATE_CONFIG;
         const cfgSnap = await getDocs(collection(db,'config'));
-        cfgSnap.forEach(d => { if (d.id === 'rateConfig') setRateConfig(d.data()); });
+        cfgSnap.forEach(d => { if (d.id === 'rateConfig') loadedCfg = d.data(); });
+        setRateConfig(loadedCfg);
+
+        // 공휴일 자동 갱신 (24시간 주기)
+        await refreshHolidaysIfNeeded(db, loadedCfg, setRateConfig, showMsg);
+
         unsub = onSnapshot(collection(db,'reservations'), (s) => {
           setReservations(s.docs.map(d => ({ id:d.id, ...d.data() })));
           setLoading(false);
@@ -542,7 +517,6 @@ export default function App() {
 
   const stats = useMemo(() => {
     let revenue = 0;
-    // { 'YYYY-MM': { Shell, Beach, Pine, total } }
     const monthlyMap = {};
     reservations.forEach(r => {
       if (!r.date || !r.room || !r.nights) return;
@@ -551,7 +525,7 @@ export default function App() {
       revenue += totalP;
       for (let i = 0; i < r.nights; i++) {
         const ds = addDays(r.date, i);
-        const ym = ds.slice(0, 7); // 'YYYY-MM'
+        const ym = ds.slice(0, 7);
         if (!monthlyMap[ym]) monthlyMap[ym] = { Shell:0, Beach:0, Pine:0, total:0 };
         monthlyMap[ym][r.room] += perNight;
         monthlyMap[ym].total += perNight;
@@ -560,11 +534,9 @@ export default function App() {
     return { revenue, count:reservations.length, monthlyMap };
   }, [reservations]);
 
-  // rateConfig 기반 래퍼 (컴포넌트 내부에서 항상 최신 config 사용)
   const getPricePerNight = React.useCallback((room, dateStr) =>
     getPricePerNightFn(room, dateStr, rateConfig), [rateConfig]);
 
-  // 자동계산 숙박요금 (추가요금 제외)
   const calcStayPrice = useMemo(() => {
     let total = 0;
     for (let i = 0; i < formData.nights; i++)
@@ -572,21 +544,16 @@ export default function App() {
     return total;
   }, [formData.date, formData.room, formData.nights, getPricePerNight]);
 
-  // 추가요금
   const extraPrice = useMemo(() =>
     formData.adults*20000 + formData.kids*15000 + (formData.bbq?30000:0),
     [formData.adults, formData.kids, formData.bbq]);
 
-  // 자동계산 총액
   const autoTotalPrice = calcStayPrice + extraPrice;
 
-  // ── 직접입력 최종 저장 금액 ──
-  // total 모드: 입력값 그대로 저장 (플랫폼에서 합계로 받은 경우)
-  // pernight 모드: 1박단가 × nights + 추가요금
   const finalManualPrice = useMemo(() => {
     const raw = Number(manualPrice) || 0;
     if (manualPriceMode === 'pernight') return raw * formData.nights + extraPrice;
-    return raw; // total 모드: 입력값 = 저장값
+    return raw;
   }, [manualPrice, manualPriceMode, formData.nights, extraPrice]);
 
   const filteredReservations = useMemo(() => {
@@ -600,7 +567,6 @@ export default function App() {
     setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(false);
   };
 
-  // ── 렌더 중 동기 업데이트 (useEffect 사용 금지 - 비동기 타이밍 문제)
   const saveStateRef = React.useRef({});
   saveStateRef.current = {
     isManualPrice, manualPrice, manualPriceMode,
@@ -625,11 +591,7 @@ export default function App() {
     let savePrice;
     if (isMp) {
       const raw = Number(mp) || 0;
-      if (mpMode === 'pernight') {
-        savePrice = raw * fd.nights + extra;
-      } else {
-        savePrice = raw;
-      }
+      savePrice = mpMode === 'pernight' ? raw * fd.nights + extra : raw;
     } else {
       savePrice = autoP;
     }
@@ -653,15 +615,12 @@ export default function App() {
     showMsg("삭제 완료", "success");
   };
 
-
-
   const handlePhoneChange = (e) => {
     let val = e.target.value.replace(/[^0-9]/g,'');
     if (!val.startsWith('010')) val = '010' + val;
     setFormData({ ...formData, phone:val });
   };
 
-  // 직접입력 토글 - 켤 때 자동계산 총액을 초기값으로
   const toggleManualPrice = () => {
     if (!isManualPrice) {
       setIsManualPrice(true);
@@ -676,7 +635,6 @@ export default function App() {
 
   const renderForm = (isModal=false) => (
     <form onSubmit={handleSave} className="space-y-4">
-      {/* 방 선택 */}
       <div className="grid grid-cols-3 gap-2">
         {ROOMS.map(r => {
           const full = isRoomFull(r.id, formData.date, editTarget);
@@ -694,7 +652,6 @@ export default function App() {
         })}
       </div>
 
-      {/* 기본 정보 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {!isModal && (
           <div className="flex flex-col">
@@ -734,7 +691,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* 추가요금 */}
       <div className="bg-slate-50 p-4 rounded-2xl space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col">
@@ -757,9 +713,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* ── 요금 영역 ── */}
       <div className="space-y-2">
-        {/* 예정 요금 표시 */}
         {roomTouched && (
           <div className="px-1 flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400">
@@ -771,10 +725,8 @@ export default function App() {
           </div>
         )}
 
-        {/* 직접입력 패널 */}
         {isManualPrice && (
           <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl space-y-3">
-            {/* 모드 탭 */}
             <div className="flex gap-1 bg-amber-100 rounded-xl p-1">
               <button type="button"
                 onClick={() => { setManualPriceMode('total'); setManualPrice(''); }}
@@ -789,8 +741,6 @@ export default function App() {
                 1박 단가 입력
               </button>
             </div>
-
-            {/* 금액 입력 */}
             <div className="flex items-center gap-2">
               <input
                 type="number"
@@ -803,16 +753,11 @@ export default function App() {
               />
               <span className="text-xs font-bold text-amber-600 shrink-0">원</span>
             </div>
-
-            {/* 미리보기 */}
             {manualPrice && Number(manualPrice) > 0 && (
               <div className="text-[11px] font-bold text-amber-700 bg-amber-100 px-3 py-2 rounded-xl leading-relaxed">
                 {manualPriceMode === 'total' ? (
                   formData.nights > 1 ? (
-                    <>
-                      ₩{Number(manualPrice).toLocaleString()} ÷ {formData.nights}박
-                      {' '}→ 1박 ₩{Math.round(Number(manualPrice)/formData.nights).toLocaleString()}으로 저장
-                    </>
+                    <>₩{Number(manualPrice).toLocaleString()} ÷ {formData.nights}박 → 1박 ₩{Math.round(Number(manualPrice)/formData.nights).toLocaleString()}으로 저장</>
                   ) : (
                     <>저장: ₩{Number(manualPrice).toLocaleString()}</>
                   )
@@ -828,7 +773,6 @@ export default function App() {
           </div>
         )}
 
-        {/* 버튼 행 */}
         <div className="flex gap-2">
           <button type="button" onClick={toggleManualPrice}
             className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all border
@@ -844,7 +788,6 @@ export default function App() {
     </form>
   );
 
-  // ── PIN 화면 ──
   if (!isUnlocked) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-sm bg-white p-10 rounded-[2.5rem] shadow-2xl text-center">
@@ -887,7 +830,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 사이드바 */}
       <nav className="hidden md:flex w-60 border-r border-slate-200 flex-col p-5 space-y-2 bg-white shadow-xl z-20 shrink-0">
         <div className="p-6 bg-blue-600 text-white rounded-[1.5rem] mb-4 shadow-xl">
           <BedDouble size={24} className="mb-3" />
@@ -904,10 +846,8 @@ export default function App() {
             <span className="text-sm">{item.label}</span>
           </button>
         ))}
-
       </nav>
 
-      {/* 메인 */}
       <main className="flex-1 overflow-auto relative bg-slate-50 pb-20 md:pb-0">
         {loading && (
           <div className="absolute inset-0 z-50 bg-white/60 backdrop-blur-sm flex items-center justify-center font-black text-slate-400 text-sm tracking-widest uppercase">
@@ -916,7 +856,6 @@ export default function App() {
         )}
         <div className="p-4 md:p-6 max-w-[1300px] mx-auto">
 
-          {/* 현황판 */}
           {activeTab==='calendar' && (
             <div className="space-y-4">
               <header className="flex flex-col md:flex-row justify-between items-center bg-white p-4 md:p-5 rounded-[1.5rem] shadow-sm border border-slate-200">
@@ -985,7 +924,6 @@ export default function App() {
             </div>
           )}
 
-          {/* 예약 등록 */}
           {activeTab==='add' && (
             <div className="max-w-3xl mx-auto space-y-6">
               <div className="bg-white p-6 md:p-10 rounded-[2rem] shadow-xl border border-slate-200">
@@ -997,7 +935,6 @@ export default function App() {
             </div>
           )}
 
-          {/* 예약 검색 */}
           {activeTab==='search' && (
             <div className="max-w-3xl mx-auto space-y-5">
               <h2 className="text-2xl font-black text-slate-800">예약 내역 검색</h2>
@@ -1047,10 +984,8 @@ export default function App() {
             </div>
           )}
 
-          {/* 경영 통계 */}
           {activeTab==='stats' && (
             <div className="max-w-5xl mx-auto space-y-6">
-              {/* 상단 액션 버튼 */}
               <button onClick={() => {
                 const header = '체크인,방,이름,연락처,박수,경로,성인,아동,BBQ,금액,메모';
                 const rows = [...reservations].sort((a,b)=>a.date?.localeCompare(b.date)).map(r =>
@@ -1118,7 +1053,6 @@ export default function App() {
             </div>
           )}
 
-          {/* 설정 탭 */}
           {activeTab==='settings' && (
             <SettingsTab
               rateConfig={rateConfig}
@@ -1136,7 +1070,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* 모바일 탭바 */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 flex items-center justify-around px-2 py-1 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
         {NAV_ITEMS.map(item => (
           <button key={item.id} onClick={() => setActiveTab(item.id)}
@@ -1148,7 +1081,6 @@ export default function App() {
         ))}
       </nav>
 
-      {/* 모달 */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
           onClick={resetModal}>
@@ -1199,7 +1131,6 @@ export default function App() {
               )}
             </div>
 
-            {/* 예약 카드 목록 */}
             <div className="mb-6 space-y-2.5">
               {(reservationMap[formData.date]||[]).length > 0 ? (
                 reservationMap[formData.date].map((r,i) => {
@@ -1269,7 +1200,6 @@ export default function App() {
               )}
             </div>
 
-            {/* 폼 */}
             <div className="pt-6 border-t-2 border-slate-100">
               <h4 className="font-black text-md mb-5 text-blue-600 flex items-center gap-2">
                 <PlusCircle size={18} /> {selectedResId ? "예약 수정 (클릭해제 시 신규등록)" : "새 예약 등록"}
