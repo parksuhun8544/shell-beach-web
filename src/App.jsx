@@ -2,52 +2,73 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getFirestore, collection, addDoc, onSnapshot,
-  serverTimestamp, deleteDoc, doc, updateDoc, getDocs, writeBatch
+  serverTimestamp, deleteDoc, doc, updateDoc, getDocs, writeBatch, setDoc
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import {
   Calendar, PlusCircle, BarChart3, ChevronLeft,
   ChevronRight, BedDouble, X, TrendingUp, Users, Wallet, Trash2,
-  Search, Check, TableProperties, Lock, Phone
+  Search, Check, TableProperties, Lock, Phone, Settings, Download
 } from 'lucide-react';
 
 // --- 1. 공휴일 및 요금 로직 ---
-const HOLIDAYS = new Set([
-  '2026-01-01','2026-01-28','2026-01-29','2026-01-30',
-  '2026-03-01','2026-03-02','2026-05-05','2026-05-25',
-  '2026-06-03','2026-06-06','2026-06-08',
-  '2026-08-15','2026-08-17',
-  '2026-09-24','2026-09-25','2026-09-26','2026-09-28',
-  '2026-10-03','2026-10-05','2026-10-09','2026-12-25',
-]);
 
-const isWeekendPrice = (dateStr) => {
+// 기본 요금 설정 (Firebase에 없을 경우 사용)
+const DEFAULT_RATE_CONFIG = {
+  holidays: [
+    '2026-01-01','2026-01-28','2026-01-29','2026-01-30',
+    '2026-03-01','2026-03-02','2026-05-05','2026-05-25',
+    '2026-06-03','2026-06-06','2026-06-08',
+    '2026-08-15','2026-08-17',
+    '2026-09-24','2026-09-25','2026-09-26','2026-09-28',
+    '2026-10-03','2026-10-05','2026-10-09','2026-12-25',
+  ],
+  seasons: [
+    { id:'peak',     label:'성수기',   start:'07-15', end:'08-25', Shell:140000, Beach:300000, Pine:450000, weekendSame:true },
+    { id:'pre1',     label:'준성수기1', start:'07-01', end:'07-14', Shell_w:120000, Shell_wk:140000, Beach_w:220000, Beach_wk:300000, Pine_w:300000, Pine_wk:450000, beachFriSpecial:250000 },
+    { id:'pre2',     label:'준성수기2', start:'05-01', end:'06-30', Shell_w:120000, Shell_wk:140000, Beach_w:220000, Beach_wk:300000, Pine_w:250000, Pine_wk:450000 },
+    { id:'offpeak',  label:'비수기',    start:'01-01', end:'04-30', Shell_w:100000, Shell_wk:120000, Beach_w:180000, Beach_wk:220000, Pine_w:220000, Pine_wk:400000 },
+  ],
+  extra: { adult: 20000, child: 15000, bbq: 30000 },
+};
+
+const isWeekendPriceFn = (dateStr, holidaySet) => {
   const d = new Date(dateStr + 'T00:00:00');
   const dow = d.getDay();
   const nxt = new Date(d);
   nxt.setDate(d.getDate() + 1);
   const ns = `${nxt.getFullYear()}-${String(nxt.getMonth()+1).padStart(2,'0')}-${String(nxt.getDate()).padStart(2,'0')}`;
   if (dow === 6) return true;
-  if (HOLIDAYS.has(ns) && nxt.getDay() !== 6) return true;
-  if (dow === 5 && HOLIDAYS.has(dateStr)) return true;
+  if (holidaySet.has(ns) && nxt.getDay() !== 6) return true;
+  if (dow === 5 && holidaySet.has(dateStr)) return true;
   return false;
 };
 
-const getPricePerNight = (room, dateStr) => {
+const getPricePerNightFn = (room, dateStr, rateConfig) => {
+  const cfg = rateConfig || DEFAULT_RATE_CONFIG;
+  const holidaySet = new Set(cfg.holidays || []);
   const [,m,d] = dateStr.split('-').map(Number);
   const mmdd = m * 100 + d;
   const dt = new Date(dateStr + 'T00:00:00');
   const isFri = dt.getDay() === 5;
-  const wk = isWeekendPrice(dateStr);
-  if (mmdd >= 715 && mmdd <= 825)
-    return { Shell:140000, Beach:300000, Pine:450000 }[room];
-  if (mmdd >= 701 && mmdd <= 714 && room === 'Beach' && isFri)
-    return 250000;
-  if (mmdd >= 701 && mmdd <= 714)
-    return { Shell:[120000,140000], Beach:[220000,300000], Pine:[300000,450000] }[room][wk?1:0];
-  if (mmdd >= 501 && mmdd <= 630)
-    return { Shell:[120000,140000], Beach:[220000,300000], Pine:[250000,450000] }[room][wk?1:0];
-  return { Shell:[100000,120000], Beach:[180000,220000], Pine:[220000,400000] }[room][wk?1:0];
+  const wk = isWeekendPriceFn(dateStr, holidaySet);
+
+  // seasons 배열을 순서대로 검사 (peak 먼저)
+  for (const s of (cfg.seasons || [])) {
+    const [sm, sd] = s.start.split('-').map(Number);
+    const [em, ed] = s.end.split('-').map(Number);
+    const startMmdd = sm * 100 + sd;
+    const endMmdd = em * 100 + ed;
+    if (mmdd >= startMmdd && mmdd <= endMmdd) {
+      if (s.weekendSame) return s[room]; // 성수기: 평일=주말
+      if (s.beachFriSpecial && room === 'Beach' && isFri) return s.beachFriSpecial;
+      return wk ? s[`${room}_wk`] : s[`${room}_w`];
+    }
+  }
+  // fallback: 비수기
+  const off = cfg.seasons?.find(s => s.id === 'offpeak');
+  if (off) return wk ? off[`${room}_wk`] : off[`${room}_w`];
+  return 0;
 };
 
 // --- 2. 상수 ---
@@ -175,11 +196,162 @@ const addDays = (ds, n) => {
   return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
 };
 
+// ─────────────────────────────────────────
+// 요금 설정 탭 컴포넌트
+// ─────────────────────────────────────────
+function SettingsTab({ rateConfig, onSave }) {
+  const [cfg, setCfg] = React.useState(() => JSON.parse(JSON.stringify(rateConfig)));
+  const [holidayInput, setHolidayInput] = React.useState('');
+  const [dirty, setDirty] = React.useState(false);
+
+  const update = (newCfg) => { setCfg(newCfg); setDirty(true); };
+
+  const updateSeason = (idx, field, val) => {
+    const s = JSON.parse(JSON.stringify(cfg));
+    s.seasons[idx][field] = val === '' ? val : (isNaN(Number(val)) ? val : Number(val));
+    update(s);
+  };
+
+  const addHoliday = () => {
+    const v = holidayInput.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
+    if (cfg.holidays.includes(v)) { setHolidayInput(''); return; }
+    const s = JSON.parse(JSON.stringify(cfg));
+    s.holidays = [...s.holidays, v].sort();
+    update(s);
+    setHolidayInput('');
+  };
+
+  const removeHoliday = (h) => {
+    const s = JSON.parse(JSON.stringify(cfg));
+    s.holidays = s.holidays.filter(x => x !== h);
+    update(s);
+  };
+
+  const ROOM_LABELS = { Shell:'Shell', Beach:'Beach', Pine:'Pine' };
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-6 pb-8">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+          <Settings size={22} className="text-blue-600" /> 요금 설정
+        </h2>
+        {dirty && (
+          <button onClick={() => { onSave(cfg); setDirty(false); }}
+            className="px-6 py-2.5 bg-blue-600 text-white font-black rounded-xl shadow-lg hover:bg-blue-500 transition-all text-sm">
+            저장
+          </button>
+        )}
+      </div>
+
+      {/* 시즌 설정 */}
+      {cfg.seasons.map((s, idx) => (
+        <div key={s.id} className="bg-white p-6 rounded-[1.5rem] border border-slate-200 shadow-sm space-y-4">
+          <div className="flex items-center gap-3">
+            <span className={`px-3 py-1 rounded-full text-xs font-black
+              ${s.id==='peak'?'bg-rose-100 text-rose-700':
+                s.id==='pre1'||s.id==='pre2'?'bg-amber-100 text-amber-700':
+                'bg-slate-100 text-slate-600'}`}>{s.label}</span>
+          </div>
+          {/* 날짜 구간 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col">
+              <label className="text-[10px] font-bold text-slate-400 mb-1">시작 (MM-DD)</label>
+              <input value={s.start} onChange={e => updateSeason(idx,'start',e.target.value)}
+                placeholder="MM-DD" maxLength={5}
+                className="p-2.5 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[10px] font-bold text-slate-400 mb-1">종료 (MM-DD)</label>
+              <input value={s.end} onChange={e => updateSeason(idx,'end',e.target.value)}
+                placeholder="MM-DD" maxLength={5}
+                className="p-2.5 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
+            </div>
+          </div>
+          {/* 단가 */}
+          {s.weekendSame ? (
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 mb-2 block">단가 (평일=주말)</label>
+              <div className="grid grid-cols-3 gap-2">
+                {['Shell','Beach','Pine'].map(r => (
+                  <div key={r} className="flex flex-col">
+                    <label className="text-[10px] font-bold text-slate-500 mb-1">{r}</label>
+                    <input type="number" value={s[r]} onChange={e => updateSeason(idx,r,e.target.value)}
+                      className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {['Shell','Beach','Pine'].map(r => (
+                <div key={r}>
+                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">{r}</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-slate-400 mb-1">평일</label>
+                      <input type="number" value={s[`${r}_w`]} onChange={e => updateSeason(idx,`${r}_w`,e.target.value)}
+                        className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
+                    </div>
+                    <div className="flex flex-col">
+                      <label className="text-[10px] text-slate-400 mb-1">주말</label>
+                      <input type="number" value={s[`${r}_wk`]} onChange={e => updateSeason(idx,`${r}_wk`,e.target.value)}
+                        className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
+                    </div>
+                  </div>
+                  {s.beachFriSpecial !== undefined && r === 'Beach' && (
+                    <div className="mt-1 flex flex-col">
+                      <label className="text-[10px] text-amber-600 mb-1">Beach 금요일 특가</label>
+                      <input type="number" value={s.beachFriSpecial} onChange={e => updateSeason(idx,'beachFriSpecial',e.target.value)}
+                        className="p-2 bg-amber-50 border border-amber-200 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-amber-400" />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* 공휴일 관리 */}
+      <div className="bg-white p-6 rounded-[1.5rem] border border-slate-200 shadow-sm space-y-4">
+        <h3 className="font-black text-slate-800">공휴일 목록</h3>
+        <div className="flex gap-2">
+          <input value={holidayInput} onChange={e => setHolidayInput(e.target.value)}
+            onKeyDown={e => e.key==='Enter' && addHoliday()}
+            placeholder="YYYY-MM-DD" maxLength={10}
+            className="flex-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
+          <button onClick={addHoliday}
+            className="px-4 py-3 bg-blue-600 text-white font-black rounded-xl text-sm hover:bg-blue-500 transition-all">
+            추가
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+          {cfg.holidays.map(h => (
+            <span key={h} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
+              {h}
+              <button onClick={() => removeHoliday(h)} className="text-rose-400 hover:text-rose-600 ml-1">×</button>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {dirty && (
+        <button onClick={() => { onSave(cfg); setDirty(false); }}
+          className="w-full py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg hover:bg-blue-500 transition-all">
+          변경사항 저장
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
   const [reservations, setReservations] = useState([]);
+  const [rateConfig, setRateConfig] = useState(DEFAULT_RATE_CONFIG);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('calendar');
   const [viewDate, setViewDate] = useState(new Date());
@@ -227,6 +399,9 @@ export default function App() {
           INITIAL_DATA.forEach(data => batch.set(doc(colRef), { ...data, createdAt: serverTimestamp() }));
           await batch.commit();
         }
+        // rateConfig 로드 (없으면 DEFAULT 사용)
+        const cfgSnap = await getDocs(collection(db,'config'));
+        cfgSnap.forEach(d => { if (d.id === 'rateConfig') setRateConfig(d.data()); });
         unsub = onSnapshot(collection(db,'reservations'), (s) => {
           setReservations(s.docs.map(d => ({ id:d.id, ...d.data() })));
           setLoading(false);
@@ -274,7 +449,8 @@ export default function App() {
 
   const stats = useMemo(() => {
     let revenue = 0;
-    const monthlyRoomStats = Array(12).fill(null).map(() => ({ Shell:0, Beach:0, Pine:0, total:0 }));
+    // { 'YYYY-MM': { Shell, Beach, Pine, total } }
+    const monthlyMap = {};
     reservations.forEach(r => {
       if (!r.date || !r.room || !r.nights) return;
       const totalP = Number(r.price) || 0;
@@ -282,16 +458,18 @@ export default function App() {
       revenue += totalP;
       for (let i = 0; i < r.nights; i++) {
         const ds = addDays(r.date, i);
-        const [y,m] = ds.split('-');
-        if (y === '2026') {
-          const idx = Number(m) - 1;
-          monthlyRoomStats[idx][r.room] += perNight;
-          monthlyRoomStats[idx].total += perNight;
-        }
+        const ym = ds.slice(0, 7); // 'YYYY-MM'
+        if (!monthlyMap[ym]) monthlyMap[ym] = { Shell:0, Beach:0, Pine:0, total:0 };
+        monthlyMap[ym][r.room] += perNight;
+        monthlyMap[ym].total += perNight;
       }
     });
-    return { revenue, count:reservations.length, monthlyRoomStats };
+    return { revenue, count:reservations.length, monthlyMap };
   }, [reservations]);
+
+  // rateConfig 기반 래퍼 (컴포넌트 내부에서 항상 최신 config 사용)
+  const getPricePerNight = React.useCallback((room, dateStr) =>
+    getPricePerNightFn(room, dateStr, rateConfig), [rateConfig]);
 
   // 자동계산 숙박요금 (추가요금 제외)
   const calcStayPrice = useMemo(() => {
@@ -299,7 +477,7 @@ export default function App() {
     for (let i = 0; i < formData.nights; i++)
       total += getPricePerNight(formData.room, addDays(formData.date, i));
     return total;
-  }, [formData.date, formData.room, formData.nights]);
+  }, [formData.date, formData.room, formData.nights, getPricePerNight]);
 
   // 추가요금
   const extraPrice = useMemo(() =>
@@ -611,7 +789,8 @@ export default function App() {
     { id:'calendar', icon:Calendar, label:'현황판' },
     { id:'add', icon:PlusCircle, label:'예약 등록' },
     { id:'search', icon:Search, label:'예약 검색' },
-    { id:'stats', icon:BarChart3, label:'경영 통계' },
+    { id:'stats', icon:BarChart3, label:'통계' },
+    { id:'settings', icon:Settings, label:'설정' },
   ];
 
   return (
@@ -670,7 +849,7 @@ export default function App() {
                   <div>
                     <h2 className="text-xl font-black text-slate-800">{viewDate.getFullYear()}년 {viewDate.getMonth()+1}월</h2>
                     <p className="text-sm font-black text-blue-600 mt-0.5">
-                      ₩{(stats.monthlyRoomStats[viewDate.getMonth()]?.total||0).toLocaleString()}
+                      ₩{(stats.monthlyMap[`${viewDate.getFullYear()}-${String(viewDate.getMonth()+1).padStart(2,'0')}`]?.total||0).toLocaleString()}
                       <span className="text-slate-400 font-bold text-xs ml-1">월 매출</span>
                     </p>
                   </div>
@@ -798,8 +977,8 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
                 <div className="bg-slate-900 p-8 rounded-[1.5rem] text-white shadow-xl relative overflow-hidden">
                   <div className="absolute -right-4 -top-4 opacity-10"><Wallet size={100} /></div>
-                  <p className="text-blue-300 font-bold text-xs">2026 누적 총 매출</p>
-                  <p className="text-3xl font-black mt-2">₩{stats.revenue.toLocaleString()}</p>
+                  <p className="text-blue-300 font-bold text-xs">{viewDate.getFullYear()} 누적 총 매출</p>
+                  <p className="text-3xl font-black mt-2">₩{Object.entries(stats.monthlyMap).filter(([k])=>k.startsWith(String(viewDate.getFullYear()))).reduce((s,[,v])=>s+v.total,0).toLocaleString()}</p>
                 </div>
                 <div className="bg-white p-8 rounded-[1.5rem] border border-slate-200 shadow-sm relative overflow-hidden">
                   <div className="absolute -right-4 -top-4 opacity-5"><Users size={100} /></div>
@@ -808,9 +987,18 @@ export default function App() {
                 </div>
               </div>
               <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-200 overflow-x-auto shadow-sm">
-                <h4 className="font-black text-lg mb-6 flex items-center gap-2">
-                  <TableProperties className="text-blue-600" size={18} /> 월별 상세 매출
-                </h4>
+                <div className="flex items-center justify-between mb-6">
+                  <h4 className="font-black text-lg flex items-center gap-2">
+                    <TableProperties className="text-blue-600" size={18} /> {viewDate.getFullYear()}년 월별 매출
+                  </h4>
+                  <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                    <button onClick={() => setViewDate(new Date(viewDate.getFullYear()-1, viewDate.getMonth(), 1))}
+                      className="p-1.5 hover:bg-white rounded-lg"><ChevronLeft size={16} /></button>
+                    <span className="px-3 text-sm font-black text-slate-700 self-center">{viewDate.getFullYear()}</span>
+                    <button onClick={() => setViewDate(new Date(viewDate.getFullYear()+1, viewDate.getMonth(), 1))}
+                      className="p-1.5 hover:bg-white rounded-lg"><ChevronRight size={16} /></button>
+                  </div>
+                </div>
                 <table className="w-full text-left min-w-[520px]">
                   <thead>
                     <tr className="border-b-2 border-slate-100 text-slate-400 text-[11px] font-black uppercase">
@@ -819,19 +1007,55 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="text-xs">
-                    {stats.monthlyRoomStats.map((s,i) => (
-                      <tr key={i} className={`border-b border-slate-50 hover:bg-slate-50 ${s.total===0?'opacity-20':''}`}>
-                        <td className="py-4 pl-4 font-bold text-slate-700">{i+1}월</td>
-                        <td>₩{s.Shell.toLocaleString()}</td>
-                        <td>₩{s.Beach.toLocaleString()}</td>
-                        <td>₩{s.Pine.toLocaleString()}</td>
-                        <td className="pr-4 font-black text-blue-600 text-right">₩{s.total.toLocaleString()}</td>
-                      </tr>
-                    ))}
+                    {Array.from({length:12}, (_,i) => {
+                      const ym = `${viewDate.getFullYear()}-${String(i+1).padStart(2,'0')}`;
+                      const s = stats.monthlyMap[ym] || { Shell:0, Beach:0, Pine:0, total:0 };
+                      return (
+                        <tr key={i} className={`border-b border-slate-50 hover:bg-slate-50 ${s.total===0?'opacity-20':''}`}>
+                          <td className="py-4 pl-4 font-bold text-slate-700">{i+1}월</td>
+                          <td>₩{s.Shell.toLocaleString()}</td>
+                          <td>₩{s.Beach.toLocaleString()}</td>
+                          <td>₩{s.Pine.toLocaleString()}</td>
+                          <td className="pr-4 font-black text-blue-600 text-right">₩{s.total.toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+              {/* CSV 내보내기 */}
+              <button onClick={() => {
+                const header = '체크인,방,이름,연락처,박수,경로,성인,아동,BBQ,금액,메모';
+                const rows = [...reservations].sort((a,b)=>a.date?.localeCompare(b.date)).map(r =>
+                  [r.date, r.room, r.name, r.phone||'', r.nights, r.path||'',
+                   r.adults||0, r.kids||0, r.bbq?'Y':'N', r.price||0, r.memo||''].join(',')
+                );
+                const csv = '\uFEFF' + [header, ...rows].join('\n');
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8;' }));
+                a.download = `shellbeach_${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+              }}
+                className="w-full flex items-center justify-center gap-2 p-4 bg-slate-800 text-white rounded-2xl font-bold hover:bg-slate-700 transition-all">
+                <Download size={18} /> 전체 예약 CSV 내보내기 ({reservations.length}건)
+              </button>
             </div>
+          )}
+
+          {/* 설정 탭 */}
+          {activeTab==='settings' && (
+            <SettingsTab
+              rateConfig={rateConfig}
+              onSave={async (newCfg) => {
+                setLoading(true);
+                try {
+                  await setDoc(doc(db,'config','rateConfig'), newCfg);
+                  setRateConfig(newCfg);
+                  showMsg('요금 설정 저장 완료', 'success');
+                } catch { showMsg('저장 실패', 'error'); }
+                setLoading(false);
+              }}
+            />
           )}
         </div>
       </main>
