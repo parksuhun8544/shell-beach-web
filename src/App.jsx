@@ -197,11 +197,75 @@ const addDays = (ds, n) => {
 };
 
 // ─────────────────────────────────────────
+// 대한민국 법정공휴일 자동 계산
+// ─────────────────────────────────────────
+function getKoreanHolidays(year) {
+  const y = Number(year);
+  const holidays = [];
+
+  // 고정 공휴일
+  const fixed = ['01-01','03-01','05-05','06-06','08-15','10-03','10-09','12-25'];
+  fixed.forEach(d => holidays.push(`${y}-${d}`));
+
+  // 어린이날 대체공휴일 (05-05가 토/일이면 다음 월요일)
+  const cc = new Date(y, 4, 5).getDay(); // 5월5일 요일
+  if (cc === 0) holidays.push(`${y}-05-06`);
+  if (cc === 6) holidays.push(`${y}-05-07`);
+
+  // 음력 공휴일 계산 (근사값 - 실제 음력 변환)
+  const lunarToSolar = (lunarMonth, lunarDay) => {
+    // 음력→양력 근사 오프셋 테이블 (2024~2027)
+    const offsets = {
+      2024: { '01-01':'02-10', '01-14':'02-23', '01-15':'02-24', '04-08':'05-15', '07-15':'08-18', '08-14':'09-16', '08-15':'09-17', '08-16':'09-18' },
+      2025: { '01-01':'01-29', '01-14':'02-11', '01-15':'02-12', '04-08':'05-05', '07-15':'08-10', '08-14':'10-05', '08-15':'10-06', '08-16':'10-07' },
+      2026: { '01-01':'02-17', '01-14':'03-02', '01-15':'03-03', '04-08':'04-24', '07-15':'08-29', '08-14':'09-23', '08-15':'09-24', '08-16':'09-25' },
+      2027: { '01-01':'02-06', '01-14':'02-19', '01-15':'02-20', '04-08':'04-14', '07-15':'08-19', '08-14':'10-13', '08-15':'10-14', '08-16':'10-15' },
+    };
+    const key = `${String(lunarMonth).padStart(2,'0')}-${String(lunarDay).padStart(2,'0')}`;
+    return offsets[y]?.[key] || null;
+  };
+
+  // 설날 (음력 1/1 전날, 당일, 다음날)
+  [['01','14'],['01','15'],['01','01']].forEach(([m,d]) => {
+    const s = lunarToSolar(Number(m),Number(d));
+    if (s) holidays.push(`${y}-${s}`);
+  });
+  // 부처님오신날 (음력 4/8)
+  const b = lunarToSolar(4,8);
+  if (b) holidays.push(`${y}-${b}`);
+  // 백중 (음력 7/15) → 현재 법정공휴일 아님, 제외
+  // 추석 (음력 8/14,15,16)
+  [['08','14'],['08','15'],['08','16']].forEach(([m,d]) => {
+    const s = lunarToSolar(Number(m),Number(d));
+    if (s) holidays.push(`${y}-${s}`);
+  });
+
+  // 대체공휴일: 설날/추석이 일요일이면 다음날
+  const addSubstitute = (dateStr) => {
+    const d = new Date(dateStr+'T00:00:00');
+    if (d.getDay() === 0) {
+      const next = new Date(d); next.setDate(d.getDate()+1);
+      const ns = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`;
+      if (!holidays.includes(ns)) holidays.push(ns);
+    }
+  };
+
+  // 현충일 대체공휴일 (2022년부터 적용, 06-06이 일요일이면)
+  const mc = new Date(y, 5, 6).getDay();
+  if (mc === 0) holidays.push(`${y}-06-07`);
+
+  // 선거일 등 임시공휴일은 수동 추가
+
+  return [...new Set(holidays)].sort();
+}
+
+// ─────────────────────────────────────────
 // 요금 설정 탭 컴포넌트
 // ─────────────────────────────────────────
 function SettingsTab({ rateConfig, onSave }) {
   const [cfg, setCfg] = React.useState(() => JSON.parse(JSON.stringify(rateConfig)));
   const [holidayInput, setHolidayInput] = React.useState('');
+  const [autoYear, setAutoYear] = React.useState(new Date().getFullYear());
   const [dirty, setDirty] = React.useState(false);
 
   const update = (newCfg) => { setCfg(newCfg); setDirty(true); };
@@ -209,6 +273,16 @@ function SettingsTab({ rateConfig, onSave }) {
   const updateSeason = (idx, field, val) => {
     const s = JSON.parse(JSON.stringify(cfg));
     s.seasons[idx][field] = val === '' ? val : (isNaN(Number(val)) ? val : Number(val));
+    update(s);
+  };
+
+  // 공휴일 자동 적용
+  const applyAutoHolidays = () => {
+    const generated = getKoreanHolidays(autoYear);
+    const s = JSON.parse(JSON.stringify(cfg));
+    // 해당 연도 기존 항목 제거 후 새로 삽입
+    const otherYears = s.holidays.filter(h => !h.startsWith(String(autoYear)));
+    s.holidays = [...new Set([...otherYears, ...generated])].sort();
     update(s);
   };
 
@@ -316,17 +390,36 @@ function SettingsTab({ rateConfig, onSave }) {
       {/* 공휴일 관리 */}
       <div className="bg-white p-6 rounded-[1.5rem] border border-slate-200 shadow-sm space-y-4">
         <h3 className="font-black text-slate-800">공휴일 목록</h3>
+
+        {/* 자동 계산 */}
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl space-y-2">
+          <p className="text-xs font-black text-blue-700">연도별 자동 적용</p>
+          <p className="text-[11px] text-blue-500">법정공휴일 + 대체공휴일 자동 계산. 동일 연도 기존 항목 대체.</p>
+          <div className="flex gap-2">
+            <input type="number" value={autoYear} onChange={e => setAutoYear(e.target.value)}
+              min="2024" max="2030"
+              className="w-28 p-2.5 bg-white border-2 border-blue-300 rounded-xl font-black text-sm text-center outline-none focus:ring-2 ring-blue-500" />
+            <button onClick={applyAutoHolidays}
+              className="flex-1 py-2.5 bg-blue-600 text-white font-black rounded-xl text-sm hover:bg-blue-500 transition-all">
+              {autoYear}년 자동 적용
+            </button>
+          </div>
+        </div>
+
+        {/* 수동 추가 */}
         <div className="flex gap-2">
           <input value={holidayInput} onChange={e => setHolidayInput(e.target.value)}
             onKeyDown={e => e.key==='Enter' && addHoliday()}
-            placeholder="YYYY-MM-DD" maxLength={10}
+            placeholder="YYYY-MM-DD 직접 추가" maxLength={10}
             className="flex-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
           <button onClick={addHoliday}
-            className="px-4 py-3 bg-blue-600 text-white font-black rounded-xl text-sm hover:bg-blue-500 transition-all">
+            className="px-4 py-3 bg-slate-700 text-white font-black rounded-xl text-sm hover:bg-slate-600 transition-all">
             추가
           </button>
         </div>
-        <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+
+        {/* 목록 */}
+        <div className="flex flex-wrap gap-2 max-h-52 overflow-y-auto">
           {cfg.holidays.map(h => (
             <span key={h} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
               {h}
@@ -974,7 +1067,22 @@ export default function App() {
           {/* 경영 통계 */}
           {activeTab==='stats' && (
             <div className="max-w-5xl mx-auto space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
+              {/* 상단 액션 버튼 */}
+              <button onClick={() => {
+                const header = '체크인,방,이름,연락처,박수,경로,성인,아동,BBQ,금액,메모';
+                const rows = [...reservations].sort((a,b)=>a.date?.localeCompare(b.date)).map(r =>
+                  [r.date, r.room, r.name, r.phone||'', r.nights, r.path||'',
+                   r.adults||0, r.kids||0, r.bbq?'Y':'N', r.price||0, r.memo||''].join(',')
+                );
+                const csv = '\uFEFF' + [header, ...rows].join('\n');
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8;' }));
+                a.download = `shellbeach_${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+              }}
+                className="w-full flex items-center justify-center gap-2 p-4 bg-slate-800 text-white rounded-2xl font-bold hover:bg-slate-700 transition-all">
+                <Download size={18} /> 전체 예약 CSV 내보내기 ({reservations.length}건)
+              </button>
                 <div className="bg-slate-900 p-8 rounded-[1.5rem] text-white shadow-xl relative overflow-hidden">
                   <div className="absolute -right-4 -top-4 opacity-10"><Wallet size={100} /></div>
                   <p className="text-blue-300 font-bold text-xs">{viewDate.getFullYear()} 누적 총 매출</p>
@@ -1023,22 +1131,6 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
-              {/* CSV 내보내기 */}
-              <button onClick={() => {
-                const header = '체크인,방,이름,연락처,박수,경로,성인,아동,BBQ,금액,메모';
-                const rows = [...reservations].sort((a,b)=>a.date?.localeCompare(b.date)).map(r =>
-                  [r.date, r.room, r.name, r.phone||'', r.nights, r.path||'',
-                   r.adults||0, r.kids||0, r.bbq?'Y':'N', r.price||0, r.memo||''].join(',')
-                );
-                const csv = '\uFEFF' + [header, ...rows].join('\n');
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8;' }));
-                a.download = `shellbeach_${new Date().toISOString().slice(0,10)}.csv`;
-                a.click();
-              }}
-                className="w-full flex items-center justify-center gap-2 p-4 bg-slate-800 text-white rounded-2xl font-bold hover:bg-slate-700 transition-all">
-                <Download size={18} /> 전체 예약 CSV 내보내기 ({reservations.length}건)
-              </button>
             </div>
           )}
 
