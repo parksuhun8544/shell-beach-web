@@ -1007,7 +1007,7 @@ export default function App() {
               <button onClick={() => {
                 const header = '체크인,방,이름,연락처,박수,경로,성인,아동,BBQ,금액,메모';
                 const rows = [...reservations].sort((a,b)=>a.date?.localeCompare(b.date)).map(r =>
-                  [r.date, r.room, r.name, r.phone||'', r.nights, r.path||'',
+                  [r.date, r.room, r.name, r.phone ? formatPhone(r.phone) : '', r.nights, r.path||'',
                    r.adults||0, r.kids||0, r.bbq?'Y':'N', r.price||0, r.memo||''].join(',')
                 );
                 const csv = '\uFEFF' + [header, ...rows].join('\n');
