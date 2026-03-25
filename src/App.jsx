@@ -924,7 +924,13 @@ export default function App() {
                           <span className={`text-xs font-black
                             ${new Date(dateStr+'T00:00:00').getDay()===0||isHoliday?'text-rose-500':
                               new Date(dateStr+'T00:00:00').getDay()===6?'text-blue-500':'text-slate-600'}`}>{day}</span>
-                          <div className="mt-1 space-y-0.5">
+                          {holidayName && (
+                            <div className="text-[7px] font-black text-rose-500 leading-tight truncate">{holidayName}</div>
+                          )}
+                          {!holidayName && isHoliday && (
+                            <div className="text-[7px] font-black text-rose-400 leading-tight">공휴일</div>
+                          )}
+                          <div className="mt-0.5 space-y-0.5">
                             {dayRes.map((r,idx) => (
                               <div key={idx} className={`text-[8px] p-0.5 rounded-md border font-bold truncate flex items-center gap-0.5
                                 ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-slate-100'}`}>
