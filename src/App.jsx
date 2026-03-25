@@ -39,6 +39,7 @@ const isWeekendPriceFn = (dateStr, holidaySet) => {
   const ns = `${nxt.getFullYear()}-${String(nxt.getMonth()+1).padStart(2,'0')}-${String(nxt.getDate()).padStart(2,'0')}`;
   if (dow === 6) return true;
   if (holidaySet.has(ns) && nxt.getDay() !== 6) return true;
+  if (holidaySet.has(ns) && nxt.getDay() === 6) return true; // 내일이 토요일 공휴일 → 주말요금
   if (dow === 5 && holidaySet.has(dateStr)) return true;
   return false;
 };
