@@ -78,12 +78,17 @@ async function fetchHolidaysFromAPI(year) {
   if (!res.ok) throw new Error(`API 오류: ${res.status}`);
   const json = await res.json();
   const items = json?.response?.body?.items?.item;
-  if (!items) return [];
+  if (!items) return { dates: [], names: {} };
   const arr = Array.isArray(items) ? items : [items];
-  return arr.map(item => {
+  const dates = [];
+  const names = {};
+  arr.forEach(item => {
     const s = String(item.locdate);
-    return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+    const dateStr = `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+    dates.push(dateStr);
+    names[dateStr] = item.dateName || '';
   });
+  return { dates, names };
 }
 
 // 하루 1회 + 당해·내년 2개년 자동 갱신
@@ -100,20 +105,30 @@ async function refreshHolidaysIfNeeded(db, currentRateConfig, setRateConfig, sho
     const thisYear = new Date().getFullYear();
     const nextYear = thisYear + 1;
 
-    const [h1, h2] = await Promise.all([
+    const [r1, r2] = await Promise.all([
       fetchHolidaysFromAPI(thisYear),
       fetchHolidaysFromAPI(nextYear),
     ]);
 
-    const freshHolidays = [...new Set([...h1, ...h2])].sort();
+    const freshDates = [...new Set([...r1.dates, ...r2.dates])].sort();
+    const freshNames = { ...r1.names, ...r2.names };
 
     // 기존 holidays에서 당해·내년 제거 후 API 결과로 교체
     const otherYears = (currentRateConfig.holidays || []).filter(h =>
       !h.startsWith(String(thisYear)) && !h.startsWith(String(nextYear))
     );
-    const newHolidays = [...new Set([...otherYears, ...freshHolidays])].sort();
+    const newHolidays = [...new Set([...otherYears, ...freshDates])].sort();
 
-    const newCfg = { ...currentRateConfig, holidays: newHolidays };
+    // holidayNames: 기존 타년도 보존 + 갱신분 덮어쓰기
+    const prevNames = currentRateConfig.holidayNames || {};
+    const otherNames = Object.fromEntries(
+      Object.entries(prevNames).filter(([k]) =>
+        !k.startsWith(String(thisYear)) && !k.startsWith(String(nextYear))
+      )
+    );
+    const newNames = { ...otherNames, ...freshNames };
+
+    const newCfg = { ...currentRateConfig, holidays: newHolidays, holidayNames: newNames };
 
     await setDoc(doc(db, 'config', 'rateConfig'), newCfg);
     await setDoc(metaRef, { updatedAt: now });
@@ -891,6 +906,8 @@ export default function App() {
                     ? `${viewDate.getFullYear()}-${String(viewDate.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
                     : null;
                   const dayRes = dateStr ? (reservationMap[dateStr]||[]) : [];
+                  const holidayName = dateStr ? (rateConfig.holidayNames?.[dateStr] || null) : null;
+                  const isHoliday = dateStr ? (new Set(rateConfig.holidays||[]).has(dateStr)) : false;
                   return (
                     <div key={i} onClick={() => {
                       if (!dateStr) return;
@@ -900,11 +917,11 @@ export default function App() {
                       setIsModalOpen(true);
                     }}
                       className={`min-h-[80px] md:min-h-[110px] p-1.5 border-r border-b border-slate-100 cursor-pointer hover:bg-blue-50/20 transition-all
-                        ${!dateStr?'bg-slate-50/30':'bg-white'}`}>
+                        ${!dateStr?'bg-slate-50/30': isHoliday ? 'bg-rose-50/40' : 'bg-white'}`}>
                       {dateStr && (
                         <>
                           <span className={`text-xs font-black
-                            ${new Date(dateStr+'T00:00:00').getDay()===0?'text-rose-500':
+                            ${new Date(dateStr+'T00:00:00').getDay()===0||isHoliday?'text-rose-500':
                               new Date(dateStr+'T00:00:00').getDay()===6?'text-blue-500':'text-slate-600'}`}>{day}</span>
                           <div className="mt-1 space-y-0.5">
                             {dayRes.map((r,idx) => (
@@ -1093,7 +1110,19 @@ export default function App() {
 
             <div className="mb-5">
               <h3 className="text-2xl font-black text-slate-900">{formData.date}</h3>
-              <p className="text-blue-600 font-bold text-[10px] tracking-widest mt-0.5 uppercase">Daily Reservation View</p>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <p className="text-blue-600 font-bold text-[10px] tracking-widest uppercase">Daily Reservation View</p>
+                {(() => {
+                  const hName = rateConfig.holidayNames?.[formData.date];
+                  const isHol = new Set(rateConfig.holidays||[]).has(formData.date);
+                  if (!isHol) return null;
+                  return (
+                    <span className="px-2.5 py-0.5 bg-rose-100 text-rose-600 font-black text-[10px] rounded-full">
+                      🎌 {hName || '공휴일'}
+                    </span>
+                  );
+                })()}
+              </div>
               {(reservationMap[formData.date]||[]).length > 0 && (
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
                   {selectedResId ? (
