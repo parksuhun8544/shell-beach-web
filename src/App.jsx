@@ -10,7 +10,6 @@ import {
   ChevronRight, BedDouble, X, Users, Wallet, Trash2,
   Search, Check, TableProperties, Lock, Phone, Settings, Download
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 // --- 1. 공휴일 및 요금 로직 ---
 
@@ -40,7 +39,7 @@ const isWeekendPriceFn = (dateStr, holidaySet) => {
   const ns = `${nxt.getFullYear()}-${String(nxt.getMonth()+1).padStart(2,'0')}-${String(nxt.getDate()).padStart(2,'0')}`;
   if (dow === 6) return true;
   if (holidaySet.has(ns) && nxt.getDay() !== 6) return true;
-  if (holidaySet.has(ns) && nxt.getDay() === 6) return true;
+  if (holidaySet.has(ns) && nxt.getDay() === 6) return true; // 내일이 토요일 공휴일 → 주말요금
   if (dow === 5 && holidaySet.has(dateStr)) return true;
   return false;
 };
@@ -70,6 +69,7 @@ const getPricePerNightFn = (room, dateStr, rateConfig) => {
   return 0;
 };
 
+// --- 공공데이터포털 특일 API ---
 const HOLIDAY_API_KEY = '4376d57998faa2ef18ba09c939333ce2ab30b183d552bc791b4799735b3021c3';
 
 async function fetchHolidaysFromAPI(year) {
@@ -92,6 +92,7 @@ async function fetchHolidaysFromAPI(year) {
   return { dates, names };
 }
 
+// 하루 1회 + 당해·내년 2개년 자동 갱신
 async function refreshHolidaysIfNeeded(db, currentRateConfig, setRateConfig, showMsg) {
   try {
     const metaRef = doc(db, 'config', 'holidayMeta');
@@ -100,7 +101,7 @@ async function refreshHolidaysIfNeeded(db, currentRateConfig, setRateConfig, sho
     const lastUpdated = metaSnap.exists() ? (metaSnap.data().updatedAt || 0) : 0;
     const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
-    if (now - lastUpdated < TWENTY_FOUR_HOURS) return;
+    if (now - lastUpdated < TWENTY_FOUR_HOURS) return; // 24시간 미경과 → 스킵
 
     const thisYear = new Date().getFullYear();
     const nextYear = thisYear + 1;
@@ -113,11 +114,13 @@ async function refreshHolidaysIfNeeded(db, currentRateConfig, setRateConfig, sho
     const freshDates = [...new Set([...r1.dates, ...r2.dates])].sort();
     const freshNames = { ...r1.names, ...r2.names };
 
+    // 기존 holidays에서 당해·내년 제거 후 API 결과로 교체
     const otherYears = (currentRateConfig.holidays || []).filter(h =>
       !h.startsWith(String(thisYear)) && !h.startsWith(String(nextYear))
     );
     const newHolidays = [...new Set([...otherYears, ...freshDates])].sort();
 
+    // holidayNames: 기존 타년도 보존 + 갱신분 덮어쓰기
     const prevNames = currentRateConfig.holidayNames || {};
     const otherNames = Object.fromEntries(
       Object.entries(prevNames).filter(([k]) =>
@@ -134,20 +137,103 @@ async function refreshHolidaysIfNeeded(db, currentRateConfig, setRateConfig, sho
 
     showMsg(`공휴일 자동 갱신 완료 (${thisYear}·${nextYear}년)`, 'success');
   } catch (err) {
+    // 갱신 실패해도 앱 동작에 영향 없음 — 기존 데이터 유지
     console.warn('공휴일 API 갱신 실패:', err.message);
   }
 }
 
-// --- 2. 상수 (화사한 파스텔톤 컬러 적용) ---
+// --- 2. 상수 ---
 const ROOMS = [
-  { id:'Shell', name:'Shell (쉘)', color:'bg-rose-50/80 text-rose-600 border-rose-100', dot:'bg-rose-400' },
-  { id:'Beach', name:'Beach (비치)', color:'bg-cyan-50/80 text-cyan-600 border-cyan-100', dot:'bg-cyan-400' },
-  { id:'Pine', name:'Pine (파인)', color:'bg-teal-50/80 text-teal-600 border-teal-100', dot:'bg-teal-400' },
+  { id:'Shell', name:'Shell (쉘)', color:'bg-rose-50 text-rose-700 border-rose-100', dot:'bg-rose-500' },
+  { id:'Beach', name:'Beach (비치)', color:'bg-sky-50 text-sky-700 border-sky-100', dot:'bg-sky-500' },
+  { id:'Pine', name:'Pine (파인)', color:'bg-emerald-50 text-emerald-700 border-emerald-100', dot:'bg-emerald-500' },
 ];
 const PATHS = ['직접','네이버펜션','네이버플레이스','네이버지도','여기어때','떠나요','홈페이지'];
 
 const INITIAL_DATA = [
-  { date:'2026-03-25', room:'Shell', name:'테스트', phone:'01012345678', path:'직접', nights:1, price:100000, adults:2, kids:0 }
+  { date:'2026-01-01', room:'Shell', name:'염준돈', phone:null, path:'여기어때', nights:1, price:100000, adults:0, kids:0 },
+  { date:'2026-01-01', room:'Pine', name:'손미향', phone:null, path:'떠나요', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-01-02', room:'Pine', name:'박정아', phone:'01068882804', path:'네이버펜션', nights:2, price:620000, adults:0, kids:0 },
+  { date:'2026-01-03', room:'Shell', name:'이태훈', phone:null, path:'떠나요', nights:1, price:120000, adults:0, kids:0 },
+  { date:'2026-01-03', room:'Beach', name:'임정아', phone:'01036780953', path:'네이버플레이스', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-01-03', room:'Pine', name:'박정아', phone:'01068882804', path:'네이버펜션', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-01-10', room:'Beach', name:'황진혁', phone:'01038890176', path:'네이버지도', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-01-10', room:'Pine', name:'정희나', phone:null, path:'여기어때', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-01-11', room:'Pine', name:'김지호', phone:'01086615843', path:'네이버지도', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-01-11', room:'Beach', name:'허소영', phone:null, path:'여기어때', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-01-16', room:'Beach', name:'류희철', phone:'01090107758', path:'네이버지도', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-01-17', room:'Shell', name:'신원균', phone:'01056345527', path:'네이버지도', nights:1, price:120000, adults:0, kids:0 },
+  { date:'2026-01-17', room:'Pine', name:'민경복', phone:null, path:'떠나요', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-01-22', room:'Beach', name:'최미선', phone:null, path:'여기어때', nights:2, price:360000, adults:0, kids:0 },
+  { date:'2026-01-23', room:'Beach', name:'최미선', phone:null, path:'여기어때', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-01-24', room:'Shell', name:'이지', phone:null, path:'여기어때', nights:1, price:120000, adults:0, kids:0 },
+  { date:'2026-01-24', room:'Pine', name:'김현정', phone:null, path:'여기어때', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-01-24', room:'Beach', name:'이하은', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-01-25', room:'Beach', name:'문성권', phone:null, path:'여기어때', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-01-25', room:'Shell', name:'진혜령', phone:null, path:'떠나요', nights:1, price:100000, adults:0, kids:0 },
+  { date:'2026-01-31', room:'Beach', name:'김태진', phone:'01094984844', path:'홈페이지', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-01-31', room:'Pine', name:'김혜영', phone:'01041796875', path:'네이버지도', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-01-31', room:'Shell', name:'이광혁', phone:null, path:'여기어때', nights:1, price:120000, adults:0, kids:0 },
+  { date:'2026-02-06', room:'Pine', name:'박세진', phone:'01027593827', path:'네이버플레이스', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-02-07', room:'Pine', name:'박진웅', phone:null, path:'떠나요', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-02-07', room:'Shell', name:'고명현', phone:null, path:'떠나요', nights:1, price:120000, adults:0, kids:0 },
+  { date:'2026-02-07', room:'Beach', name:'강보미', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-02-08', room:'Pine', name:'김성운', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-02-14', room:'Shell', name:'김주호', phone:'01032130905', path:'네이버펜션', nights:2, price:220000, adults:0, kids:0 },
+  { date:'2026-02-14', room:'Pine', name:'한행륜', phone:null, path:'여기어때', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-02-14', room:'Beach', name:'이정아', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-02-15', room:'Pine', name:'박민수', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-02-15', room:'Shell', name:'이수진', phone:null, path:'여기어때', nights:2, price:200000, adults:0, kids:0 },
+  { date:'2026-02-15', room:'Beach', name:'최지영', phone:null, path:'여기어때', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-02-16', room:'Shell', name:'박현우', phone:null, path:'여기어때', nights:1, price:100000, adults:0, kids:0 },
+  { date:'2026-02-16', room:'Beach', name:'정다운', phone:null, path:'여기어때', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-02-17', room:'Beach', name:'김민준', phone:null, path:'여기어때', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-02-18', room:'Beach', name:'이서연', phone:null, path:'여기어때', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-02-21', room:'Beach', name:'황보라', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-02-22', room:'Pine', name:'황진혁', phone:'01038890176', path:'네이버지도', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-02-27', room:'Shell', name:'류현진', phone:null, path:'네이버펜션', nights:1, price:100000, adults:0, kids:0 },
+  { date:'2026-02-28', room:'Pine', name:'김태희', phone:null, path:'여기어때', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-02-28', room:'Shell', name:'이민호', phone:null, path:'여기어때', nights:2, price:240000, adults:0, kids:0 },
+  { date:'2026-02-28', room:'Beach', name:'박소연', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-03-01', room:'Beach', name:'정호영', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-03-01', room:'Shell', name:'김나연', phone:null, path:'여기어때', nights:1, price:120000, adults:0, kids:0 },
+  { date:'2026-03-07', room:'Shell', name:'최준혁', phone:null, path:'네이버지도', nights:1, price:120000, adults:0, kids:0 },
+  { date:'2026-03-07', room:'Beach', name:'이유진', phone:null, path:'네이버지도', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-03-07', room:'Pine', name:'박지수', phone:null, path:'네이버지도', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-03-14', room:'Shell', name:'김동현', phone:null, path:'여기어때', nights:1, price:120000, adults:0, kids:0 },
+  { date:'2026-03-14', room:'Beach', name:'오세훈', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-03-17', room:'Pine', name:'임진혁', phone:'01026489627', path:'떠나요', nights:2, price:440000, adults:0, kids:0 },
+  { date:'2026-03-21', room:'Beach', name:'서지원', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-03-28', room:'Beach', name:'한소희', phone:null, path:'네이버펜션', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-03-28', room:'Shell', name:'김민재', phone:null, path:'네이버펜션', nights:1, price:120000, adults:0, kids:0 },
+  { date:'2026-04-02', room:'Beach', name:'최단비', phone:null, path:'직접', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-04-02', room:'Pine', name:'최단비', phone:null, path:'직접', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-04-03', room:'Pine', name:'최단비', phone:null, path:'직접', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-04-04', room:'Pine', name:'정재열', phone:null, path:'직접', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-04-04', room:'Beach', name:'김광주', phone:null, path:'직접', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-04-12', room:'Pine', name:'엄마지인', phone:null, path:'직접', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-04-13', room:'Pine', name:'엄마지인', phone:null, path:'직접', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-04-17', room:'Beach', name:'김두헌', phone:null, path:'직접', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-04-17', room:'Pine', name:'이현희', phone:null, path:'직접', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-04-18', room:'Beach', name:'이현희', phone:null, path:'직접', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-04-18', room:'Pine', name:'이현희', phone:null, path:'직접', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-04-24', room:'Beach', name:'김은영', phone:null, path:'네이버지도', nights:1, price:180000, adults:0, kids:0 },
+  { date:'2026-04-25', room:'Beach', name:'김유정', phone:null, path:'여기어때', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-04-25', room:'Pine', name:'김광주', phone:null, path:'직접', nights:1, price:400000, adults:0, kids:0 },
+  { date:'2026-05-01', room:'Shell', name:'김미선', phone:null, path:'여기어때', nights:1, price:120000, adults:0, kids:0 },
+  { date:'2026-05-01', room:'Pine', name:'정재열', phone:null, path:'직접', nights:1, price:250000, adults:0, kids:0 },
+  { date:'2026-05-02', room:'Shell', name:'박인희', phone:null, path:'여기어때', nights:1, price:140000, adults:0, kids:0 },
+  { date:'2026-05-02', room:'Pine', name:'김해숙', phone:null, path:'직접', nights:1, price:450000, adults:0, kids:0 },
+  { date:'2026-05-02', room:'Beach', name:'김태연', phone:null, path:'여기어때', nights:1, price:300000, adults:0, kids:0 },
+  { date:'2026-05-03', room:'Beach', name:'이현자', phone:null, path:'직접', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-05-15', room:'Beach', name:'김민지', phone:null, path:'네이버펜션', nights:1, price:220000, adults:0, kids:0 },
+  { date:'2026-05-16', room:'Beach', name:'이수빈', phone:null, path:'네이버지도', nights:1, price:300000, adults:0, kids:0 },
+  { date:'2026-05-17', room:'Pine', name:'박준영', phone:null, path:'여기어때', nights:1, price:250000, adults:0, kids:0 },
+  { date:'2026-05-23', room:'Pine', name:'최예린', phone:null, path:'여기어때', nights:1, price:450000, adults:0, kids:0 },
+  { date:'2026-05-23', room:'Beach', name:'강하늘', phone:null, path:'네이버지도', nights:1, price:300000, adults:0, kids:0 },
+  { date:'2026-05-24', room:'Pine', name:'정우성', phone:null, path:'여기어때', nights:1, price:450000, adults:0, kids:0 },
+  { date:'2026-05-24', room:'Beach', name:'김혜수', phone:null, path:'네이버지도', nights:1, price:300000, adults:0, kids:0 },
+  { date:'2026-07-13', room:'Pine', name:'이준호', phone:null, path:'네이버펜션', nights:1, price:300000, adults:0, kids:0 },
 ];
 
 // --- 3. Firebase ---
@@ -182,13 +268,14 @@ const addDays = (ds, n) => {
 };
 
 // ─────────────────────────────────────────
-// 요금 설정 탭
+// 요금 설정 탭 컴포넌트 (자동적용 버튼 제거됨)
 // ─────────────────────────────────────────
 function SettingsTab({ rateConfig, onSave }) {
   const [cfg, setCfg] = React.useState(() => JSON.parse(JSON.stringify(rateConfig)));
   const [holidayInput, setHolidayInput] = React.useState('');
   const [dirty, setDirty] = React.useState(false);
 
+  // rateConfig prop이 외부에서 바뀌면 (API 자동갱신) 로컬 state 동기화
   React.useEffect(() => {
     setCfg(JSON.parse(JSON.stringify(rateConfig)));
     setDirty(false);
@@ -221,48 +308,49 @@ function SettingsTab({ rateConfig, onSave }) {
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-black text-stone-800 flex items-center gap-2">
-          <Settings size={22} className="text-teal-500" /> 요금 설정
+        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+          <Settings size={22} className="text-blue-600" /> 요금 설정
         </h2>
         {dirty && (
           <button onClick={() => { onSave(cfg); setDirty(false); }}
-            className="px-6 py-2.5 bg-teal-500 text-white font-bold rounded-xl shadow-lg hover:bg-teal-600 transition-all text-sm">
+            className="px-6 py-2.5 bg-blue-600 text-white font-black rounded-xl shadow-lg hover:bg-blue-500 transition-all text-sm">
             저장
           </button>
         )}
       </div>
 
+      {/* 시즌 설정 */}
       {cfg.seasons.map((s, idx) => (
-        <div key={s.id} className="bg-white/80 backdrop-blur-md p-6 rounded-[1.5rem] border border-stone-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
+        <div key={s.id} className="bg-white p-6 rounded-[1.5rem] border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-full text-xs font-bold
-              ${s.id==='peak'?'bg-rose-50 text-rose-600':
-                s.id==='pre1'||s.id==='pre2'?'bg-amber-50 text-amber-600':
-                'bg-stone-100 text-stone-500'}`}>{s.label}</span>
+            <span className={`px-3 py-1 rounded-full text-xs font-black
+              ${s.id==='peak'?'bg-rose-100 text-rose-700':
+                s.id==='pre1'||s.id==='pre2'?'bg-amber-100 text-amber-700':
+                'bg-slate-100 text-slate-600'}`}>{s.label}</span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col">
-              <label className="text-[10px] font-bold text-stone-400 mb-1">시작 (MM-DD)</label>
+              <label className="text-[10px] font-bold text-slate-400 mb-1">시작 (MM-DD)</label>
               <input value={s.start} onChange={e => updateSeason(idx,'start',e.target.value)}
                 placeholder="MM-DD" maxLength={5}
-                className="p-2.5 bg-stone-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-teal-500/50" />
+                className="p-2.5 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
             </div>
             <div className="flex flex-col">
-              <label className="text-[10px] font-bold text-stone-400 mb-1">종료 (MM-DD)</label>
+              <label className="text-[10px] font-bold text-slate-400 mb-1">종료 (MM-DD)</label>
               <input value={s.end} onChange={e => updateSeason(idx,'end',e.target.value)}
                 placeholder="MM-DD" maxLength={5}
-                className="p-2.5 bg-stone-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-teal-500/50" />
+                className="p-2.5 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
             </div>
           </div>
           {s.weekendSame ? (
             <div>
-              <label className="text-[10px] font-bold text-stone-400 mb-2 block">단가 (평일=주말)</label>
+              <label className="text-[10px] font-bold text-slate-400 mb-2 block">단가 (평일=주말)</label>
               <div className="grid grid-cols-3 gap-2">
                 {['Shell','Beach','Pine'].map(r => (
                   <div key={r} className="flex flex-col">
-                    <label className="text-[10px] font-bold text-stone-500 mb-1">{r}</label>
+                    <label className="text-[10px] font-bold text-slate-500 mb-1">{r}</label>
                     <input type="number" value={s[r]} onChange={e => updateSeason(idx,r,e.target.value)}
-                      className="p-2 bg-stone-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-teal-500/50" />
+                      className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
                   </div>
                 ))}
               </div>
@@ -271,24 +359,24 @@ function SettingsTab({ rateConfig, onSave }) {
             <div className="space-y-2">
               {['Shell','Beach','Pine'].map(r => (
                 <div key={r}>
-                  <label className="text-[10px] font-bold text-stone-500 mb-1 block">{r}</label>
+                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">{r}</label>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex flex-col">
-                      <label className="text-[10px] text-stone-400 mb-1">평일</label>
+                      <label className="text-[10px] text-slate-400 mb-1">평일</label>
                       <input type="number" value={s[r+'_w']} onChange={e => updateSeason(idx, r+'_w', e.target.value)}
-                        className="p-2 bg-stone-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-teal-500/50" />
+                        className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
                     </div>
                     <div className="flex flex-col">
-                      <label className="text-[10px] text-stone-400 mb-1">주말</label>
+                      <label className="text-[10px] text-slate-400 mb-1">주말</label>
                       <input type="number" value={s[r+'_wk']} onChange={e => updateSeason(idx, r+'_wk', e.target.value)}
-                        className="p-2 bg-stone-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-teal-500/50" />
+                        className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
                     </div>
                   </div>
                   {s.beachFriSpecial !== undefined && r === 'Beach' && (
                     <div className="mt-1 flex flex-col">
-                      <label className="text-[10px] text-cyan-600 mb-1">Beach 금요일 특가</label>
+                      <label className="text-[10px] text-amber-600 mb-1">Beach 금요일 특가</label>
                       <input type="number" value={s.beachFriSpecial} onChange={e => updateSeason(idx,'beachFriSpecial',e.target.value)}
-                        className="p-2 bg-cyan-50/50 border border-cyan-100 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-cyan-300" />
+                        className="p-2 bg-amber-50 border border-amber-200 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-amber-400" />
                     </div>
                   )}
                 </div>
@@ -298,27 +386,31 @@ function SettingsTab({ rateConfig, onSave }) {
         </div>
       ))}
 
-      <div className="bg-white/80 backdrop-blur-md p-6 rounded-[1.5rem] border border-stone-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
-        <h3 className="font-black text-stone-800">공휴일 목록</h3>
-        <div className="p-4 bg-teal-50/50 border border-teal-100 rounded-2xl">
-          <p className="text-xs font-bold text-teal-700">자동 갱신 활성화됨</p>
-          <p className="text-[11px] text-teal-500/80 mt-1">
+      {/* 공휴일 관리 — 자동갱신 안내 + 수동 추가만 */}
+      <div className="bg-white p-6 rounded-[1.5rem] border border-slate-200 shadow-sm space-y-4">
+        <h3 className="font-black text-slate-800">공휴일 목록</h3>
+
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl">
+          <p className="text-xs font-black text-blue-700">자동 갱신 활성화됨</p>
+          <p className="text-[11px] text-blue-500 mt-1">
             공공데이터포털 API 기반 · 앱 로드 시 24시간 주기로 당해·내년도 자동 갱신
           </p>
         </div>
+
         <div className="flex gap-2">
           <input value={holidayInput} onChange={e => setHolidayInput(e.target.value)}
             onKeyDown={e => e.key==='Enter' && addHoliday()}
-            placeholder="YYYY-MM-DD 수동 추가" maxLength={10}
-            className="flex-1 p-3 bg-stone-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-teal-500/50" />
+            placeholder="YYYY-MM-DD 임시공휴일 수동 추가" maxLength={10}
+            className="flex-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
           <button onClick={addHoliday}
-            className="px-4 py-3 bg-stone-800 text-white font-bold rounded-xl text-sm hover:bg-stone-700 transition-all">
+            className="px-4 py-3 bg-slate-700 text-white font-black rounded-xl text-sm hover:bg-slate-600 transition-all">
             추가
           </button>
         </div>
+
         <div className="flex flex-wrap gap-2 max-h-52 overflow-y-auto">
           {cfg.holidays.map(h => (
-            <span key={h} className="flex items-center gap-1 px-3 py-1.5 bg-stone-100 rounded-full text-xs font-medium text-stone-600">
+            <span key={h} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
               {h}
               <button onClick={() => removeHoliday(h)} className="text-rose-400 hover:text-rose-600 ml-1">×</button>
             </span>
@@ -328,7 +420,7 @@ function SettingsTab({ rateConfig, onSave }) {
 
       {dirty && (
         <button onClick={() => { onSave(cfg); setDirty(false); }}
-          className="w-full py-4 bg-teal-500 text-white font-bold rounded-2xl shadow-lg hover:bg-teal-600 transition-all">
+          className="w-full py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg hover:bg-blue-500 transition-all">
           변경사항 저장
         </button>
       )}
@@ -348,11 +440,9 @@ export default function App() {
   const [message, setMessage] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [exitConfirm, setExitConfirm] = useState(false);
   const [selectedResId, setSelectedResId] = useState(null);
-
-  // 다중 필터 검색 상태
-  const [searchFilters, setSearchFilters] = useState({ text: '', room: 'ALL', startDate: '', endDate: '' });
 
   const [isManualPrice, setIsManualPrice] = useState(false);
   const [manualPrice, setManualPrice] = useState('');
@@ -387,11 +477,13 @@ export default function App() {
           INITIAL_DATA.forEach(data => batch.set(doc(colRef), { ...data, createdAt: serverTimestamp() }));
           await batch.commit();
         }
+        // rateConfig 로드
         let loadedCfg = DEFAULT_RATE_CONFIG;
         const cfgSnap = await getDocs(collection(db,'config'));
         cfgSnap.forEach(d => { if (d.id === 'rateConfig') loadedCfg = d.data(); });
         setRateConfig(loadedCfg);
 
+        // 공휴일 자동 갱신 (24시간 주기)
         await refreshHolidaysIfNeeded(db, loadedCfg, setRateConfig, showMsg);
 
         unsub = onSnapshot(collection(db,'reservations'), (s) => {
@@ -458,17 +550,6 @@ export default function App() {
     return { revenue, count:reservations.length, monthlyMap };
   }, [reservations]);
 
-  // Recharts 데이터 가공
-  const chartData = useMemo(() => {
-    const data = [];
-    for(let i=1; i<=12; i++) {
-      const ym = `${viewDate.getFullYear()}-${String(i).padStart(2,'0')}`;
-      const s = stats.monthlyMap[ym] || { Shell:0, Beach:0, Pine:0, total:0 };
-      data.push({ name: `${i}월`, Shell: s.Shell, Beach: s.Beach, Pine: s.Pine });
-    }
-    return data;
-  }, [stats, viewDate]);
-
   const getPricePerNight = React.useCallback((room, dateStr) =>
     getPricePerNightFn(room, dateStr, rateConfig), [rateConfig]);
 
@@ -491,17 +572,11 @@ export default function App() {
     return raw;
   }, [manualPrice, manualPriceMode, formData.nights, extraPrice]);
 
-  // 다중 필터링 로직
-  const advancedFilteredReservations = useMemo(() => {
-    return reservations.filter(r => {
-      const s = searchFilters.text.toLowerCase();
-      const matchText = !s || (r.name?.toLowerCase().includes(s) || r.phone?.includes(s));
-      const matchRoom = searchFilters.room === 'ALL' || r.room === searchFilters.room;
-      const matchStart = !searchFilters.startDate || r.date >= searchFilters.startDate;
-      const matchEnd = !searchFilters.endDate || r.date <= searchFilters.endDate;
-      return matchText && matchRoom && matchStart && matchEnd;
-    }).sort((a,b) => b.date.localeCompare(a.date));
-  }, [reservations, searchFilters]);
+  const filteredReservations = useMemo(() => {
+    if (!searchTerm) return [...reservations].sort((a,b) => a.date?.localeCompare(b.date));
+    const s = searchTerm.toLowerCase();
+    return reservations.filter(r => r.name?.includes(s) || r.phone?.includes(s));
+  }, [reservations, searchTerm]);
 
   const resetModal = () => {
     setIsModalOpen(false); setEditTarget(null); setSelectedResId(null);
@@ -556,29 +631,6 @@ export default function App() {
     showMsg("삭제 완료", "success");
   };
 
-  // 캘린더 D&D 핸들러
-  const handleDrop = async (e, targetDate) => {
-    e.preventDefault();
-    const resId = e.dataTransfer.getData('resId');
-    if (!resId || !targetDate) return;
-
-    const targetRes = reservations.find(r => r.id === resId);
-    if (!targetRes || targetRes.date === targetDate) return;
-
-    for (let i = 0; i < targetRes.nights; i++) {
-      if (isRoomFull(targetRes.room, addDays(targetDate, i), resId)) {
-        showMsg("이동할 날짜에 이미 예약된 객실이 있습니다.", "error");
-        return;
-      }
-    }
-    try {
-      await updateDoc(doc(db, 'reservations', resId), { date: targetDate });
-      showMsg("예약 날짜가 변경되었습니다.", "success");
-    } catch (err) {
-      showMsg("날짜 변경 실패", "error");
-    }
-  };
-
   const handlePhoneChange = (e) => {
     let val = e.target.value.replace(/[^0-9]/g,'');
     if (!val.startsWith('010')) val = '010' + val;
@@ -605,10 +657,10 @@ export default function App() {
           return (
             <button key={r.id} type="button" disabled={full}
               onClick={() => { setFormData({ ...formData, room:r.id }); setRoomTouched(true); }}
-              className={`p-3 rounded-xl font-bold border-2 transition-all flex flex-col items-center
-                ${full ? 'bg-stone-50 border-stone-100 text-stone-300 opacity-50' :
-                  formData.room===r.id ? 'bg-teal-500 text-white border-teal-500 shadow-md' :
-                  'bg-white border-stone-100 text-stone-500 hover:border-teal-200'}`}>
+              className={`p-3 rounded-xl font-black border-2 transition-all flex flex-col items-center
+                ${full ? 'bg-slate-50 border-slate-100 text-slate-300 opacity-50' :
+                  formData.room===r.id ? 'bg-blue-600 text-white border-blue-600 shadow-md' :
+                  'bg-white border-slate-100 text-slate-500 hover:border-blue-200'}`}>
               <span className="text-xs md:text-sm">{r.name}</span>
               {full && <span className="text-[10px] text-rose-400 font-bold mt-1">예약 마감</span>}
             </button>
@@ -619,52 +671,52 @@ export default function App() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {!isModal && (
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-stone-400 ml-1 mb-1">체크인 날짜</label>
+            <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">체크인 날짜</label>
             <input type="date" value={formData.date}
               onChange={e => setFormData({ ...formData, date:e.target.value })}
-              className="p-3 bg-stone-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-teal-500/50 text-sm" required />
+              className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm" required />
           </div>
         )}
         <div className="flex flex-col">
-          <label className="text-[10px] font-bold text-stone-400 ml-1 mb-1">숙박 일수</label>
+          <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">숙박 일수</label>
           <select value={formData.nights}
             onChange={e => setFormData({ ...formData, nights:Number(e.target.value) })}
-            className="p-3 bg-stone-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-teal-500/50 text-sm">
+            className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm">
             {[1,2,3,4,5,6,7].map(n => <option key={n} value={n}>{n}박</option>)}
           </select>
         </div>
         <div className="flex flex-col">
-          <label className="text-[10px] font-bold text-stone-400 ml-1 mb-1">성함</label>
+          <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">성함</label>
           <input type="text" placeholder="예약자명" value={formData.name}
             onChange={e => setFormData({ ...formData, name:e.target.value })}
-            className="p-3 bg-stone-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-teal-500/50 text-sm" required />
+            className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm" required />
         </div>
         <div className="flex flex-col">
-          <label className="text-[10px] font-bold text-stone-400 ml-1 mb-1">연락처</label>
+          <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">연락처</label>
           <input type="tel" placeholder="010-0000-0000" value={formatPhone(formData.phone)}
             onChange={handlePhoneChange}
-            className="p-3 bg-stone-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-teal-500/50 text-sm" />
+            className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm" />
         </div>
         <div className="flex flex-col">
-          <label className="text-[10px] font-bold text-stone-400 ml-1 mb-1">예약 경로</label>
+          <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">예약 경로</label>
           <select value={formData.path}
             onChange={e => setFormData({ ...formData, path:e.target.value })}
-            className="p-3 bg-stone-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-teal-500/50 text-sm">
+            className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm">
             {PATHS.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
       </div>
 
-      <div className="bg-stone-50 p-4 rounded-2xl space-y-3 border border-stone-100">
+      <div className="bg-slate-50 p-4 rounded-2xl space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-stone-500 mb-1 ml-1">성인(8세~, 2만)</label>
+            <label className="text-[10px] font-bold text-slate-500 mb-1 ml-1">성인(8세~, 2만)</label>
             <input type="number" min="0" value={formData.adults}
               onChange={e => setFormData({ ...formData, adults:Number(e.target.value) })}
               className="p-2.5 rounded-xl border-none font-bold text-center text-sm" />
           </div>
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-stone-500 mb-1 ml-1">아동(~7세, 1.5만)</label>
+            <label className="text-[10px] font-bold text-slate-500 mb-1 ml-1">아동(~7세, 1.5만)</label>
             <input type="number" min="0" value={formData.kids}
               onChange={e => setFormData({ ...formData, kids:Number(e.target.value) })}
               className="p-2.5 rounded-xl border-none font-bold text-center text-sm" />
@@ -672,7 +724,7 @@ export default function App() {
         </div>
         <button type="button" onClick={() => setFormData({ ...formData, bbq:!formData.bbq })}
           className={`w-full p-2.5 rounded-xl font-bold border-2 text-xs transition-all
-            ${formData.bbq ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-stone-400 border-stone-100'}`}>
+            ${formData.bbq ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-400 border-slate-100'}`}>
           바베큐 그릴 (30,000원) {formData.bbq ? '신청완료' : '미신청'}
         </button>
       </div>
@@ -680,28 +732,28 @@ export default function App() {
       <div className="space-y-2">
         {roomTouched && (
           <div className="px-1 flex items-center justify-between">
-            <span className="text-xs font-bold text-stone-400">
+            <span className="text-xs font-bold text-slate-400">
               {isManualPrice ? '직접입력 요금' : '예정 요금'}
             </span>
-            <span className="text-base font-black text-stone-800">
+            <span className="text-base font-black text-slate-800">
               ₩{(isManualPrice ? finalManualPrice : autoTotalPrice).toLocaleString()}
             </span>
           </div>
         )}
 
         {isManualPrice && (
-          <div className="p-4 bg-amber-50/80 border-2 border-amber-200 rounded-2xl space-y-3">
-            <div className="flex gap-1 bg-amber-100/50 rounded-xl p-1">
+          <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl space-y-3">
+            <div className="flex gap-1 bg-amber-100 rounded-xl p-1">
               <button type="button"
                 onClick={() => { setManualPriceMode('total'); setManualPrice(''); }}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all
-                  ${manualPriceMode==='total' ? 'bg-white text-amber-700 shadow' : 'text-amber-600/60'}`}>
+                className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all
+                  ${manualPriceMode==='total' ? 'bg-white text-amber-700 shadow' : 'text-amber-500'}`}>
                 합계 입력
               </button>
               <button type="button"
                 onClick={() => { setManualPriceMode('pernight'); setManualPrice(''); }}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all
-                  ${manualPriceMode==='pernight' ? 'bg-white text-amber-700 shadow' : 'text-amber-600/60'}`}>
+                className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all
+                  ${manualPriceMode==='pernight' ? 'bg-white text-amber-700 shadow' : 'text-amber-500'}`}>
                 1박 단가 입력
               </button>
             </div>
@@ -711,23 +763,40 @@ export default function App() {
                 value={manualPrice}
                 onChange={e => setManualPrice(e.target.value)}
                 placeholder={manualPriceMode==='total'
-                  ? `합계 금액 (${formData.nights}박)`
+                  ? `합계 금액 (${formData.nights}박 전체)`
                   : '1박 단가'}
-                className="flex-1 bg-white border-2 border-amber-200 rounded-xl p-3 outline-none font-bold text-amber-900 text-base placeholder-amber-300"
+                className="flex-1 bg-white border-2 border-amber-300 rounded-xl p-3 outline-none font-black text-amber-900 text-base placeholder-amber-300"
               />
               <span className="text-xs font-bold text-amber-600 shrink-0">원</span>
             </div>
+            {manualPrice && Number(manualPrice) > 0 && (
+              <div className="text-[11px] font-bold text-amber-700 bg-amber-100 px-3 py-2 rounded-xl leading-relaxed">
+                {manualPriceMode === 'total' ? (
+                  formData.nights > 1 ? (
+                    <>₩{Number(manualPrice).toLocaleString()} ÷ {formData.nights}박 → 1박 ₩{Math.round(Number(manualPrice)/formData.nights).toLocaleString()}으로 저장</>
+                  ) : (
+                    <>저장: ₩{Number(manualPrice).toLocaleString()}</>
+                  )
+                ) : (
+                  <>
+                    1박 ₩{Number(manualPrice).toLocaleString()} × {formData.nights}박
+                    {extraPrice > 0 && <> + 추가요금 ₩{extraPrice.toLocaleString()}</>}
+                    {' '}= 저장: ₩{finalManualPrice.toLocaleString()}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        <div className="flex gap-2 pt-2">
+        <div className="flex gap-2">
           <button type="button" onClick={toggleManualPrice}
             className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all border
-              ${isManualPrice ? 'bg-amber-500 border-amber-400 text-white' : 'bg-stone-100 border-stone-200 text-stone-500 hover:bg-stone-200'}`}>
+              ${isManualPrice ? 'bg-amber-500 border-amber-400 text-white' : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'}`}>
             {isManualPrice ? '✏️ 직접입력 중' : '가격 직접입력'}
           </button>
           <button type="submit"
-            className="flex-1 py-3 bg-teal-500 rounded-xl font-bold text-sm text-white hover:bg-teal-600 transition-all shadow-lg">
+            className="flex-1 py-3 bg-blue-600 rounded-xl font-black text-sm text-white hover:bg-blue-500 transition-all shadow-lg">
             {editTarget ? "수정 완료" : "예약 저장"}
           </button>
         </div>
@@ -736,20 +805,20 @@ export default function App() {
   );
 
   if (!isUnlocked) return (
-    <div className="min-h-screen bg-stone-100 flex items-center justify-center p-4 font-sans">
-      <div className="w-full max-w-sm bg-white/80 backdrop-blur-md p-10 rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-white text-center">
-        <div className="w-16 h-16 bg-teal-50 rounded-full flex items-center justify-center text-teal-500 mx-auto mb-6 shadow-sm">
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm bg-white p-10 rounded-[2.5rem] shadow-2xl text-center">
+        <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 mx-auto mb-6">
           <Lock size={32} />
         </div>
-        <h1 className="text-xl font-black text-stone-800 mb-6 tracking-tighter uppercase">Shell Beach Admin</h1>
+        <h1 className="text-xl font-black text-slate-800 mb-6 tracking-tighter uppercase">Shell Beach Admin</h1>
         <form onSubmit={handleLogin} className="space-y-4">
           <input type="password" maxLength={4} value={pinInput}
             onChange={e => setPinInput(e.target.value)}
-            className={`w-full p-4 text-center text-3xl font-black bg-stone-50 border-2 rounded-2xl outline-none transition-all
-              ${pinError ? 'border-rose-400 focus:border-rose-500' : 'border-stone-100 focus:border-teal-500'}`}
+            className={`w-full p-4 text-center text-3xl font-black bg-slate-50 border-2 rounded-2xl outline-none
+              ${pinError ? 'border-rose-400' : 'border-slate-100'}`}
             placeholder="PIN" autoFocus />
           {pinError && <p className="text-rose-500 text-xs font-bold">PIN이 올바르지 않습니다</p>}
-          <button type="submit" className="w-full p-4 bg-teal-500 text-white font-bold rounded-2xl shadow-lg hover:bg-teal-600 transition-all">시스템 접속</button>
+          <button type="submit" className="w-full p-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg">시스템 접속</button>
         </form>
       </div>
     </div>
@@ -764,72 +833,71 @@ export default function App() {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-stone-50 font-sans text-stone-800 selection:bg-teal-200">
+    <div className="flex flex-col md:flex-row h-screen bg-slate-50 font-sans">
       {message && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[1000] px-6 py-2.5 rounded-full shadow-xl font-bold text-sm
-          ${message.type==='success' ? 'bg-stone-800 text-white' : 'bg-rose-500 text-white'}`}>
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[1000] px-6 py-2.5 rounded-full shadow-2xl font-bold
+          ${message.type==='success' ? 'bg-slate-900 text-white' : 'bg-rose-600 text-white'}`}>
           {message.text}
         </div>
       )}
       {exitConfirm && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1000] px-6 py-2.5 rounded-full shadow-xl font-bold bg-amber-500 text-white text-sm">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1000] px-6 py-2.5 rounded-full shadow-2xl font-bold bg-amber-500 text-white">
           종료하시겠습니까? 한 번 더 누르면 종료됩니다
         </div>
       )}
 
-      <nav className="hidden md:flex w-64 border-r border-stone-200/60 flex-col p-5 space-y-2 bg-white/60 backdrop-blur-xl z-20 shrink-0 shadow-[4px_0_24px_rgb(0,0,0,0.02)]">
-        <div className="p-6 bg-gradient-to-br from-teal-400 to-teal-600 text-white rounded-[1.5rem] mb-4 shadow-lg shadow-teal-500/20">
-          <BedDouble size={24} className="mb-3 opacity-90" />
-          <h1 className="font-black text-xl uppercase tracking-tighter leading-none drop-shadow-sm">Shell<br />Beach</h1>
-          <div className="mt-4 text-[10px] bg-black/10 px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1.5 w-fit backdrop-blur-sm border border-white/10">
-            <Check size={10} className="text-teal-200" /> 실시간 동기화 중
+      <nav className="hidden md:flex w-60 border-r border-slate-200 flex-col p-5 space-y-2 bg-white shadow-xl z-20 shrink-0">
+        <div className="p-6 bg-blue-600 text-white rounded-[1.5rem] mb-4 shadow-xl">
+          <BedDouble size={24} className="mb-3" />
+          <h1 className="font-black text-lg uppercase tracking-tighter leading-none">Shell<br />Beach</h1>
+          <div className="mt-3 text-[10px] bg-white/20 p-2 rounded-lg font-bold flex items-center gap-1.5">
+            <Check size={10} /> 실시간 동기화 중
           </div>
         </div>
         {NAV_ITEMS.map(item => (
           <button key={item.id} onClick={() => setActiveTab(item.id)}
-            className={`flex items-center gap-3 p-3.5 rounded-xl font-medium transition-all
-              ${activeTab===item.id ? 'bg-teal-50 text-teal-600 font-bold shadow-sm border border-teal-100/50' : 'text-stone-500 hover:bg-stone-100/80'}`}>
-            <item.icon size={18} strokeWidth={activeTab===item.id?2.5:2} />
+            className={`flex items-center gap-3 p-3.5 rounded-xl font-bold transition-all
+              ${activeTab===item.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-100'}`}>
+            <item.icon size={18} />
             <span className="text-sm">{item.label}</span>
           </button>
         ))}
       </nav>
 
-      <main className="flex-1 overflow-auto relative bg-stone-50/50 pb-20 md:pb-0">
+      <main className="flex-1 overflow-auto relative bg-slate-50 pb-20 md:pb-0">
         {loading && (
-          <div className="absolute inset-0 z-50 bg-stone-50/60 backdrop-blur-md flex items-center justify-center font-black text-teal-600/50 text-sm tracking-widest uppercase">
+          <div className="absolute inset-0 z-50 bg-white/60 backdrop-blur-sm flex items-center justify-center font-black text-slate-400 text-sm tracking-widest uppercase">
             Syncing...
           </div>
         )}
-        <div className="p-4 md:p-8 max-w-[1300px] mx-auto">
+        <div className="p-4 md:p-6 max-w-[1300px] mx-auto">
 
           {activeTab==='calendar' && (
-            <div className="space-y-4 md:space-y-6">
-              <header className="flex flex-col md:flex-row justify-between items-center bg-white/80 backdrop-blur-md p-5 rounded-[1.5rem] shadow-[0_4px_20px_rgb(0,0,0,0.03)] border border-stone-100">
-                <div className="flex items-center gap-4">
-                  <div className="bg-teal-50 p-3 rounded-2xl text-teal-600 shadow-sm"><Calendar size={22} /></div>
+            <div className="space-y-4">
+              <header className="flex flex-col md:flex-row justify-between items-center bg-white p-4 md:p-5 rounded-[1.5rem] shadow-sm border border-slate-200">
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-50 p-2.5 rounded-xl text-blue-600"><Calendar size={20} /></div>
                   <div>
-                    <h2 className="text-2xl font-black text-stone-800">{viewDate.getFullYear()}년 {viewDate.getMonth()+1}월</h2>
-                    <p className="text-sm font-bold text-teal-600 mt-1">
+                    <h2 className="text-xl font-black text-slate-800">{viewDate.getFullYear()}년 {viewDate.getMonth()+1}월</h2>
+                    <p className="text-sm font-black text-blue-600 mt-0.5">
                       ₩{(stats.monthlyMap[`${viewDate.getFullYear()}-${String(viewDate.getMonth()+1).padStart(2,'0')}`]?.total||0).toLocaleString()}
-                      <span className="text-stone-400 font-medium text-xs ml-1.5">월 매출</span>
+                      <span className="text-slate-400 font-bold text-xs ml-1">월 매출</span>
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-1.5 bg-stone-100/80 p-1.5 rounded-xl mt-4 md:mt-0">
+                <div className="flex gap-1.5 bg-slate-100 p-1.5 rounded-xl mt-3 md:mt-0">
                   <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1,1))}
-                    className="p-2 hover:bg-white rounded-lg shadow-sm text-stone-600"><ChevronLeft size={18} /></button>
+                    className="p-1.5 hover:bg-white rounded-lg shadow-sm"><ChevronLeft size={18} /></button>
                   <button onClick={() => setViewDate(new Date())}
-                    className="px-4 font-bold text-xs text-teal-600 hover:bg-white rounded-lg transition-all">오늘</button>
+                    className="px-4 font-bold text-[11px] text-blue-600">오늘</button>
                   <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()+1,1))}
-                    className="p-2 hover:bg-white rounded-lg shadow-sm text-stone-600"><ChevronRight size={18} /></button>
+                    className="p-1.5 hover:bg-white rounded-lg shadow-sm"><ChevronRight size={18} /></button>
                 </div>
               </header>
-
-              <div className="grid grid-cols-7 bg-white/90 backdrop-blur-sm rounded-[1.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden border border-stone-200/60">
+              <div className="grid grid-cols-7 bg-white rounded-[1.5rem] shadow-lg overflow-hidden border border-slate-200/60">
                 {['일','월','화','수','목','금','토'].map((d,i) => (
-                  <div key={d} className={`p-3 text-center text-xs font-bold border-b border-stone-100
-                    ${i===0?'text-rose-500 bg-rose-50/30':i===6?'text-cyan-600 bg-cyan-50/30':'text-stone-400 bg-stone-50/50'}`}>{d}</div>
+                  <div key={d} className={`p-2 text-center text-[10px] font-black border-b border-slate-100
+                    ${i===0?'text-rose-500 bg-rose-50/20':i===6?'text-blue-500 bg-blue-50/20':'text-slate-400 bg-slate-50'}`}>{d}</div>
                 ))}
                 {Array.from({length:42}).map((_,i) => {
                   const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay();
@@ -841,45 +909,40 @@ export default function App() {
                   const dayRes = dateStr ? (reservationMap[dateStr]||[]) : [];
                   const holidayName = dateStr ? (rateConfig.holidayNames?.[dateStr] || null) : null;
                   const isHoliday = dateStr ? (new Set(rateConfig.holidays||[]).has(dateStr)) : false;
-
                   return (
-                    <div key={i} 
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => handleDrop(e, dateStr)}
-                      onClick={() => {
-                        if (!dateStr) return;
-                        setFormData({ date:dateStr, room:'Shell', name:'', phone:'010', adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접' });
-                        setEditTarget(null); setSelectedResId(null);
-                        setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(false);
-                        setIsModalOpen(true);
-                      }}
-                      className={`min-h-[90px] md:min-h-[120px] p-2 border-r border-b border-stone-100 cursor-pointer hover:bg-teal-50/30 transition-all
-                        ${!dateStr?'bg-stone-50/30': isHoliday ? 'bg-rose-50/20' : 'bg-white'}`}>
+                    <div key={i} onClick={() => {
+                      if (!dateStr) return;
+                      setFormData({ date:dateStr, room:'Shell', name:'', phone:'010', adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접' });
+                      setEditTarget(null); setSelectedResId(null);
+                      setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(false);
+                      setIsModalOpen(true);
+                    }}
+                      className={`min-h-[80px] md:min-h-[110px] p-1.5 border-r border-b border-slate-100 cursor-pointer hover:bg-blue-50/20 transition-all
+                        ${!dateStr?'bg-slate-50/30': isHoliday ? 'bg-rose-50/40' : 'bg-white'}`}>
                       {dateStr && (
                         <>
-                          <span className={`text-xs font-bold
+                          <span className={`text-xs font-black
                             ${new Date(dateStr+'T00:00:00').getDay()===0||isHoliday?'text-rose-500':
-                              new Date(dateStr+'T00:00:00').getDay()===6?'text-cyan-600':'text-stone-600'}`}>{day}</span>
+                              new Date(dateStr+'T00:00:00').getDay()===6?'text-blue-500':'text-slate-600'}`}>{day}</span>
                           {holidayName && (
-                            <div className="text-[9px] font-bold text-rose-500 leading-tight truncate mt-0.5">{holidayName}</div>
+                            <div className="text-[7px] font-black text-rose-500 leading-tight truncate">{holidayName}</div>
                           )}
                           {!holidayName && isHoliday && (
-                            <div className="text-[9px] font-bold text-rose-400 leading-tight mt-0.5">공휴일</div>
+                            <div className="text-[7px] font-black text-rose-400 leading-tight">공휴일</div>
                           )}
-                          <div className="mt-1 space-y-1">
-                            {dayRes.map((r,idx) => (
-                              <div key={idx} 
-                                draggable
-                                onDragStart={(e) => {
-                                  e.stopPropagation();
-                                  e.dataTransfer.setData('resId', r.id);
-                                }}
-                                className={`text-[10px] p-1.5 rounded-lg border font-bold truncate flex items-center gap-1.5 cursor-grab active:cursor-grabbing hover:brightness-95 transition-all
-                                  ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-stone-50 text-stone-600 border-stone-200'}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ROOMS.find(rm=>rm.id===r.room)?.dot||'bg-stone-300'}`}></div>
-                                <span className="truncate">{r.name}</span>
-                              </div>
-                            ))}
+                          <div className="mt-0.5 space-y-0.5">
+                            {['Shell','Beach','Pine'].map(roomId => {
+                              const r = dayRes.find(x => x.room === roomId);
+                              if (!r) return null;
+                              return (
+                                <div key={roomId} className={`text-[8px] p-0.5 rounded-md border font-bold truncate flex items-center gap-0.5
+                                  ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-slate-100'}`}>
+                                  <div className={`w-1 h-1 rounded-full shrink-0 ${ROOMS.find(rm=>rm.id===r.room)?.dot||'bg-slate-300'}`}></div>
+                                  <span className="shrink-0 opacity-70">{roomId}</span>
+                                  <span className="truncate ml-0.5">{r.name}</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </>
                       )}
@@ -892,9 +955,9 @@ export default function App() {
 
           {activeTab==='add' && (
             <div className="max-w-3xl mx-auto space-y-6">
-              <div className="bg-white/90 backdrop-blur-md p-6 md:p-10 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100">
-                <h2 className="text-2xl font-black text-stone-800 mb-8 border-b border-stone-100 pb-5 flex items-center gap-3">
-                  <PlusCircle className="text-teal-500" /> 신규 예약 등록
+              <div className="bg-white p-6 md:p-10 rounded-[2rem] shadow-xl border border-slate-200">
+                <h2 className="text-2xl font-black text-slate-800 mb-8 border-b pb-5 flex items-center gap-3">
+                  <PlusCircle className="text-blue-600" /> 신규 예약 등록
                 </h2>
                 {renderForm(false)}
               </div>
@@ -902,52 +965,36 @@ export default function App() {
           )}
 
           {activeTab==='search' && (
-            <div className="max-w-4xl mx-auto space-y-6">
-              <h2 className="text-2xl font-black text-stone-800 mb-2">예약 내역 검색</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6 bg-white/80 p-4 rounded-[1.5rem] shadow-sm border border-stone-100">
-                <div className="md:col-span-2 relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
-                  <input type="text" placeholder="성함 또는 연락처"
-                    className="w-full p-3 pl-12 bg-stone-50 border border-stone-200 rounded-xl font-bold text-sm outline-none focus:border-teal-500 focus:bg-white transition-all"
-                    value={searchFilters.text} onChange={e => setSearchFilters({...searchFilters, text: e.target.value})} />
-                </div>
-                <select value={searchFilters.room} onChange={e => setSearchFilters({...searchFilters, room: e.target.value})}
-                  className="p-3 bg-stone-50 border border-stone-200 rounded-xl font-bold text-sm outline-none focus:border-teal-500 focus:bg-white transition-all text-stone-600">
-                  <option value="ALL">모든 객실</option>
-                  {ROOMS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-                <div className="flex items-center justify-between gap-1 bg-stone-50 border border-stone-200 rounded-xl px-2 focus-within:border-teal-500 focus-within:bg-white transition-all">
-                  <input type="date" value={searchFilters.startDate} onChange={e => setSearchFilters({...searchFilters, startDate: e.target.value})} 
-                    className="w-full text-xs font-bold outline-none bg-transparent text-stone-600" />
-                  <span className="text-stone-300 font-black">-</span>
-                  <input type="date" value={searchFilters.endDate} onChange={e => setSearchFilters({...searchFilters, endDate: e.target.value})} 
-                    className="w-full text-xs font-bold outline-none bg-transparent text-stone-600" />
-                </div>
+            <div className="max-w-3xl mx-auto space-y-5">
+              <h2 className="text-2xl font-black text-slate-800">예약 내역 검색</h2>
+              <div className="relative">
+                <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                <input type="text" placeholder="성함 또는 연락처 입력..."
+                  className="w-full p-5 pl-14 bg-white border border-slate-200 rounded-2xl shadow-sm text-lg font-bold outline-none focus:ring-4 ring-blue-500/10 focus:border-blue-500"
+                  value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               </div>
-
               <div className="space-y-3">
-                {advancedFilteredReservations.length > 0 ? advancedFilteredReservations.map(r => (
-                  <div key={r.id} className="bg-white/90 backdrop-blur-sm p-5 rounded-[1.5rem] border border-stone-100 flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-sm hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] transition-all border-l-4 border-l-teal-500">
+                {filteredReservations.length > 0 ? filteredReservations.map(r => (
+                  <div key={r.id} className="bg-white p-5 rounded-[1.5rem] border border-slate-100 flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-sm hover:shadow-md transition-all border-l-4 border-l-blue-500">
                     <div className="flex items-center gap-4">
-                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shrink-0 shadow-sm
-                        ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-stone-50 text-stone-400'}`}>
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg shrink-0
+                        ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-slate-100'}`}>
                         {r.room?r.room[0]:'?'}
                       </div>
                       <div>
-                        <p className="text-lg font-black text-stone-800">{r.name}님
-                          <span className="text-[10px] font-bold text-teal-600 ml-2 px-2 py-1 bg-teal-50 rounded-lg uppercase">{r.room}</span>
+                        <p className="text-lg font-black text-slate-800">{r.name}님
+                          <span className="text-[11px] font-bold text-blue-500 ml-2 px-2 py-0.5 bg-blue-50 rounded-md uppercase">{r.room}</span>
                         </p>
-                        <p className="text-stone-500 font-medium mt-1 text-xs">{r.date} 입실 • <span className="font-bold text-stone-700">{r.nights}박</span> • {r.path||'-'}</p>
+                        <p className="text-slate-500 font-bold mt-0.5 text-xs">{r.date} 입실 • {r.nights}박 • {r.path||'-'}</p>
                         {r.phone && (
-                          <a href={`tel:${r.phone}`} className="inline-flex items-center gap-1.5 mt-2 text-stone-600 font-bold hover:text-teal-600 transition-colors bg-stone-50 hover:bg-teal-50 px-3 py-1 rounded-full text-[11px]">
+                          <a href={`tel:${r.phone}`} className="inline-flex items-center gap-1.5 mt-1.5 text-blue-600 font-bold hover:underline bg-blue-50 px-3 py-1 rounded-full text-[11px]">
                             <Phone size={11} /> {formatPhone(r.phone)}
                           </a>
                         )}
                       </div>
                     </div>
-                    <div className="flex justify-between items-center md:flex-col md:items-end gap-2 border-t md:border-t-0 pt-4 md:pt-0 border-stone-100">
-                      <p className="text-xl font-black text-stone-800">₩{(Number(r.price)||0).toLocaleString()}</p>
+                    <div className="flex justify-between items-center md:flex-col md:items-end gap-1 border-t md:border-t-0 pt-3 md:pt-0">
+                      <p className="text-xl font-black text-slate-900">₩{(Number(r.price)||0).toLocaleString()}</p>
                       <div className="flex gap-2">
                         <button onClick={() => {
                           setFormData({ date:r.date, room:r.room, name:r.name, phone:r.phone||'010',
@@ -955,13 +1002,13 @@ export default function App() {
                             nights:r.nights||1, memo:r.memo||'', path:r.path||'직접' });
                           setEditTarget(r.id); setIsManualPrice(false); setManualPrice('');
                           setManualPriceMode('total'); setRoomTouched(true); setIsModalOpen(true);
-                        }} className="text-teal-600 font-bold text-[11px] px-3.5 py-2 bg-teal-50 rounded-xl hover:bg-teal-500 hover:text-white transition-all shadow-sm">수정</button>
+                        }} className="text-blue-600 font-black text-[10px] px-3 py-1.5 bg-blue-50 rounded-lg hover:bg-blue-600 hover:text-white transition-all">수정</button>
                         <button onClick={() => handleDelete(r.id)}
-                          className="text-rose-500 font-bold text-[11px] px-3.5 py-2 bg-rose-50 rounded-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm">삭제</button>
+                          className="text-rose-500 font-black text-[10px] px-3 py-1.5 bg-rose-50 rounded-lg hover:bg-rose-500 hover:text-white transition-all">삭제</button>
                       </div>
                     </div>
                   </div>
-                )) : <div className="p-16 text-center text-stone-400 font-bold text-sm bg-white/50 backdrop-blur-sm rounded-[2rem] border-2 border-dashed border-stone-200">검색 조건에 맞는 예약 내역이 없습니다.</div>}
+                )) : <div className="p-20 text-center text-slate-400 font-bold text-sm bg-white rounded-2xl border-2 border-dashed">검색 결과가 없습니다.</div>}
               </div>
             </div>
           )}
@@ -980,56 +1027,58 @@ export default function App() {
                 a.download = 'shellbeach_' + new Date().toISOString().slice(0,10) + '.csv';
                 a.click();
               }}
-                className="w-full flex items-center justify-center gap-2 p-4 bg-stone-800 text-white rounded-[1.5rem] font-bold hover:bg-stone-700 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
+                className="w-full flex items-center justify-center gap-2 p-4 bg-slate-800 text-white rounded-2xl font-bold hover:bg-slate-700 transition-all">
                 <Download size={18} /> 전체 예약 CSV 내보내기 ({reservations.length}건)
               </button>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
-                <div className="bg-gradient-to-br from-teal-500 to-teal-700 p-8 rounded-[2rem] text-white shadow-lg shadow-teal-500/20 relative overflow-hidden">
-                  <div className="absolute -right-4 -top-4 opacity-10"><Wallet size={120} /></div>
-                  <p className="text-teal-100 font-bold text-xs tracking-wide">{viewDate.getFullYear()} 누적 총 매출</p>
-                  <p className="text-4xl font-black mt-3">₩{Object.entries(stats.monthlyMap).filter(([k])=>k.startsWith(String(viewDate.getFullYear()))).reduce((s,[,v])=>s+v.total,0).toLocaleString()}</p>
+                <div className="bg-slate-900 p-8 rounded-[1.5rem] text-white shadow-xl relative overflow-hidden">
+                  <div className="absolute -right-4 -top-4 opacity-10"><Wallet size={100} /></div>
+                  <p className="text-blue-300 font-bold text-xs">{viewDate.getFullYear()} 누적 총 매출</p>
+                  <p className="text-3xl font-black mt-2">₩{Object.entries(stats.monthlyMap).filter(([k])=>k.startsWith(String(viewDate.getFullYear()))).reduce((s,[,v])=>s+v.total,0).toLocaleString()}</p>
                 </div>
-                <div className="bg-white/90 backdrop-blur-md p-8 rounded-[2rem] border border-stone-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] relative overflow-hidden">
-                  <div className="absolute -right-4 -top-4 opacity-[0.03] text-stone-900"><Users size={120} /></div>
-                  <p className="text-stone-400 font-bold text-xs tracking-wide">총 예약 건수</p>
-                  <p className="text-4xl font-black mt-3 text-stone-800">{stats.count}건</p>
+                <div className="bg-white p-8 rounded-[1.5rem] border border-slate-200 shadow-sm relative overflow-hidden">
+                  <div className="absolute -right-4 -top-4 opacity-5"><Users size={100} /></div>
+                  <p className="text-slate-500 font-bold text-xs">총 예약 건수</p>
+                  <p className="text-3xl font-black mt-2 text-slate-800">{stats.count}건</p>
                 </div>
               </div>
-
-              {/* Recharts 적용 차트 영역 */}
-              <div className="bg-white/90 backdrop-blur-md p-6 md:p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100 mt-6">
-                <div className="flex items-center justify-between mb-8">
-                  <h4 className="font-black text-lg flex items-center gap-2 text-stone-800">
-                    <BarChart3 className="text-teal-500" size={20} /> {viewDate.getFullYear()}년 객실별 매출 추이
+              <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-200 overflow-x-auto shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <h4 className="font-black text-lg flex items-center gap-2">
+                    <TableProperties className="text-blue-600" size={18} /> {viewDate.getFullYear()}년 월별 매출
                   </h4>
-                  <div className="flex gap-1 bg-stone-50 p-1 rounded-xl border border-stone-100">
+                  <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
                     <button onClick={() => setViewDate(new Date(viewDate.getFullYear()-1, viewDate.getMonth(), 1))}
-                      className="p-1.5 hover:bg-white rounded-lg shadow-sm text-stone-500"><ChevronLeft size={16} /></button>
-                    <span className="px-4 text-sm font-black text-teal-600 self-center">{viewDate.getFullYear()}</span>
+                      className="p-1.5 hover:bg-white rounded-lg"><ChevronLeft size={16} /></button>
+                    <span className="px-3 text-sm font-black text-slate-700 self-center">{viewDate.getFullYear()}</span>
                     <button onClick={() => setViewDate(new Date(viewDate.getFullYear()+1, viewDate.getMonth(), 1))}
-                      className="p-1.5 hover:bg-white rounded-lg shadow-sm text-stone-500"><ChevronRight size={16} /></button>
+                      className="p-1.5 hover:bg-white rounded-lg"><ChevronRight size={16} /></button>
                   </div>
                 </div>
-                <div className="h-[300px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <XAxis dataKey="name" interval={0} tick={{fontSize: 10, fontWeight: 'bold', fill: '#78716c'}} axisLine={false} tickLine={false} />
-                      <YAxis tickFormatter={(val) => `₩${(val/10000).toFixed(0)}만`} tick={{fontSize: 10, fill: '#a8a29e'}} axisLine={false} tickLine={false} />
-                      <Tooltip 
-                        formatter={(val) => `₩${val.toLocaleString()}`} 
-                        cursor={{fill: '#f5f5f4'}}
-                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.08)', fontWeight: 'bold' }}
-                      />
-                      <Legend wrapperStyle={{fontSize: '11px', fontWeight: 'bold', paddingTop: '20px'}} />
-                      <Bar dataKey="Shell" name="Shell" stackId="a" fill="#fb7185" radius={[0,0,4,4]} maxBarSize={40} />
-                      <Bar dataKey="Beach" name="Beach" stackId="a" fill="#22d3ee" maxBarSize={40} />
-                      <Bar dataKey="Pine" name="Pine" stackId="a" fill="#2dd4bf" radius={[4,4,0,0]} maxBarSize={40} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                <table className="w-full text-left min-w-[520px]">
+                  <thead>
+                    <tr className="border-b-2 border-slate-100 text-slate-400 text-[11px] font-black uppercase">
+                      <th className="py-4 pl-4">월</th><th>Shell</th><th>Beach</th><th>Pine</th>
+                      <th className="py-4 pr-4 text-slate-900 text-right">합계</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-xs">
+                    {Array.from({length:12}, (_,i) => {
+                      const ym = `${viewDate.getFullYear()}-${String(i+1).padStart(2,'0')}`;
+                      const s = stats.monthlyMap[ym] || { Shell:0, Beach:0, Pine:0, total:0 };
+                      return (
+                        <tr key={i} className={`border-b border-slate-50 hover:bg-slate-50 ${s.total===0?'opacity-20':''}`}>
+                          <td className="py-4 pl-4 font-bold text-slate-700">{i+1}월</td>
+                          <td>₩{s.Shell.toLocaleString()}</td>
+                          <td>₩{s.Beach.toLocaleString()}</td>
+                          <td>₩{s.Pine.toLocaleString()}</td>
+                          <td className="pr-4 font-black text-blue-600 text-right">₩{s.total.toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-
             </div>
           )}
 
@@ -1050,44 +1099,44 @@ export default function App() {
         </div>
       </main>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/90 backdrop-blur-xl border-t border-stone-200/50 flex items-center justify-around px-2 py-2 shadow-[0_-10px_40px_rgba(0,0,0,0.04)] pb-safe">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 flex items-center justify-around px-2 py-1 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
         {NAV_ITEMS.map(item => (
           <button key={item.id} onClick={() => setActiveTab(item.id)}
-            className={`flex flex-col items-center justify-center gap-1 flex-1 py-2 rounded-2xl transition-all
-              ${activeTab===item.id?'text-teal-600 bg-teal-50':'text-stone-400 hover:bg-stone-50'}`}>
-            <item.icon size={20} strokeWidth={activeTab===item.id?2.5:2} />
-            <span className={`text-[10px] font-bold ${activeTab===item.id?'text-teal-600':'text-stone-400'}`}>{item.label}</span>
+            className={`flex flex-col items-center justify-center gap-1 flex-1 py-2 rounded-xl transition-all
+              ${activeTab===item.id?'text-blue-600':'text-slate-400'}`}>
+            <item.icon size={22} strokeWidth={activeTab===item.id?2.5:1.8} />
+            <span className={`text-[10px] font-black ${activeTab===item.id?'text-blue-600':'text-slate-400'}`}>{item.label}</span>
           </button>
         ))}
       </nav>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-md"
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
           onClick={resetModal}>
-          <div className="bg-white/95 backdrop-blur-xl w-full max-w-xl rounded-[2.5rem] p-6 md:p-8 relative overflow-y-auto max-h-[92vh] shadow-[0_20px_60px_rgba(0,0,0,0.1)] border border-white"
+          <div className="bg-white w-full max-w-xl rounded-[2rem] p-6 md:p-8 relative overflow-y-auto max-h-[92vh] shadow-2xl"
             onClick={e => e.stopPropagation()}>
             <button onClick={resetModal}
-              className="absolute top-6 right-6 p-2.5 bg-stone-100 text-stone-500 rounded-full hover:bg-rose-500 hover:text-white transition-all">
-              <X size={18} strokeWidth={2.5} />
+              className="absolute top-5 right-5 p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-rose-500 hover:text-white transition-all">
+              <X size={18} />
             </button>
 
-            <div className="mb-6">
-              <h3 className="text-3xl font-black text-stone-800 tracking-tight">{formData.date}</h3>
-              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                <p className="text-teal-600 font-bold text-[10px] tracking-widest uppercase">Daily Reservation View</p>
+            <div className="mb-5">
+              <h3 className="text-2xl font-black text-slate-900">{formData.date}</h3>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <p className="text-blue-600 font-bold text-[10px] tracking-widest uppercase">Daily Reservation View</p>
                 {(() => {
                   const hName = rateConfig.holidayNames?.[formData.date];
                   const isHol = new Set(rateConfig.holidays||[]).has(formData.date);
                   if (!isHol) return null;
                   return (
-                    <span className="px-2.5 py-0.5 bg-rose-50 text-rose-500 font-bold text-[10px] rounded-full border border-rose-100">
+                    <span className="px-2.5 py-0.5 bg-rose-100 text-rose-600 font-black text-[10px] rounded-full">
                       🎌 {hName || '공휴일'}
                     </span>
                   );
                 })()}
               </div>
               {(reservationMap[formData.date]||[]).length > 0 && (
-                <div className="mt-4 flex items-center gap-2 flex-wrap">
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
                   {selectedResId ? (
                     (() => {
                       const sel = (reservationMap[formData.date]||[]).find(r => r.id === selectedResId);
@@ -1097,13 +1146,13 @@ export default function App() {
                       const dayPrice = Math.round(((Number(sel.price)||0) - selExtra) / (sel.nights||1));
                       const extraCard = nightIdx === 0 ? selExtra : 0;
                       return (
-                        <span className="px-3.5 py-1.5 bg-teal-500 text-white rounded-full text-xs font-bold shadow-sm">
+                        <span className="px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-black">
                           {sel.name}님 · ₩{(dayPrice + extraCard).toLocaleString()} ({nightIdx+1}박째)
                         </span>
                       );
                     })()
                   ) : (
-                    <span className="px-3.5 py-1.5 bg-stone-800 text-white rounded-full text-xs font-bold shadow-sm">
+                    <span className="px-3 py-1.5 bg-slate-900 text-white rounded-full text-xs font-black">
                       합계 · ₩{(reservationMap[formData.date]||[]).reduce((s,r) => {
                           const nightIdx = Math.round((new Date(formData.date+'T00:00:00') - new Date(r.date+'T00:00:00')) / 86400000);
                           const rExtra = (r.adults||0)*20000 + (r.kids||0)*15000 + (r.bbq?30000:0);
@@ -1115,7 +1164,7 @@ export default function App() {
                   )}
                   {selectedResId && (
                     <button onClick={() => { setSelectedResId(null); setEditTarget(null); }}
-                      className="px-3 py-1.5 bg-stone-100 text-stone-600 rounded-full text-xs font-bold hover:bg-stone-200 transition-all">
+                      className="px-3 py-1.5 bg-slate-100 text-slate-500 rounded-full text-xs font-bold hover:bg-slate-200 transition-all">
                       전체보기
                     </button>
                   )}
@@ -1123,7 +1172,7 @@ export default function App() {
               )}
             </div>
 
-            <div className="mb-8 space-y-3">
+            <div className="mb-6 space-y-2.5">
               {(reservationMap[formData.date]||[]).length > 0 ? (
                 reservationMap[formData.date].map((r,i) => {
                   const isSelected = selectedResId === r.id;
@@ -1142,15 +1191,15 @@ export default function App() {
                           setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(true);
                         }
                       }}
-                      className={`p-4 md:p-5 rounded-2xl cursor-pointer transition-all border 
-                        ${isSelected ? 'ring-2 ring-teal-500 shadow-md border-transparent bg-white' : 'hover:shadow-md border-stone-100'}
-                        ${!isSelected && (ROOMS.find(rm=>rm.id===r.room)?.color||'bg-stone-50 text-stone-600')}`}>
+                      className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-sm
+                        ${isSelected ? 'ring-2 ring-blue-500 shadow-md' : 'hover:shadow-md'}
+                        ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-slate-50'}`}>
                       <div className="flex justify-between items-start">
                         <div>
-                          <div className="flex items-center gap-2.5">
-                            <span className="font-black text-lg">{r.room}</span>
-                            <span className="font-bold text-sm text-stone-700">{r.name}님</span>
-                            <span className="font-black text-sm text-stone-900 bg-white/50 px-2 py-0.5 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-base">{r.room}</span>
+                            <span className="font-bold text-sm text-slate-600">{r.name}님</span>
+                            <span className="font-black text-sm text-slate-800">
                               ₩{(() => {
                                 const nightIdx = Math.round((new Date(formData.date+'T00:00:00') - new Date(r.date+'T00:00:00')) / 86400000);
                                 const rExtra = (r.adults||0)*20000 + (r.kids||0)*15000 + (r.bbq?30000:0);
@@ -1160,24 +1209,24 @@ export default function App() {
                               })()}
                             </span>
                           </div>
-                          <div className="text-[11px] font-medium mt-2 opacity-80 flex items-center gap-2 flex-wrap">
+                          <div className="text-[10px] font-bold mt-1.5 opacity-70 flex items-center gap-2 flex-wrap">
                             {r.phone && (
                               <a href={`tel:${r.phone}`} onClick={e => e.stopPropagation()}
-                                className="text-teal-700 font-bold flex items-center gap-1 hover:underline">
-                                <Phone size={11}/>{formatPhone(r.phone)}
+                                className="text-blue-600 underline flex items-center gap-1">
+                                <Phone size={10}/>{formatPhone(r.phone)}
                               </a>
                             )}
-                            <span className="font-bold">{r.nights}박</span>
+                            <span>{r.nights}박</span>
                             {r.adults > 0 && <span>성인 {r.adults}</span>}
                             {r.kids > 0 && <span>아동 {r.kids}</span>}
-                            {r.path && <span className="bg-white/80 px-2 py-0.5 rounded-full font-bold shadow-sm">{r.path}</span>}
+                            {r.path && <span className="bg-white/60 px-2 py-0.5 rounded-full">{r.path}</span>}
                           </div>
                         </div>
                         {isSelected && (
                           <div className="flex gap-2 ml-2 shrink-0" onClick={e => e.stopPropagation()}>
                             <button onClick={() => handleDelete(r.id)}
-                              className="text-rose-500 p-2 bg-rose-50 rounded-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm">
-                              <Trash2 size={18} />
+                              className="text-rose-500 p-2 bg-white/70 rounded-xl hover:bg-rose-500 hover:text-white transition-all">
+                              <Trash2 size={16} />
                             </button>
                           </div>
                         )}
@@ -1186,14 +1235,14 @@ export default function App() {
                   );
                 })
               ) : (
-                <div className="p-8 bg-stone-50 rounded-2xl text-center font-bold text-stone-400 border-2 border-dashed border-stone-200 text-xs">
+                <div className="p-8 bg-slate-50 rounded-2xl text-center font-bold text-slate-400 border-2 border-dashed text-xs">
                   등록된 예약 내역이 없습니다.
                 </div>
               )}
             </div>
 
-            <div className="pt-6 border-t-2 border-stone-100">
-              <h4 className="font-black text-md mb-5 text-teal-600 flex items-center gap-2">
+            <div className="pt-6 border-t-2 border-slate-100">
+              <h4 className="font-black text-md mb-5 text-blue-600 flex items-center gap-2">
                 <PlusCircle size={18} /> {selectedResId ? "예약 수정 (클릭해제 시 신규등록)" : "새 예약 등록"}
               </h4>
               {renderForm(true)}
@@ -1204,5 +1253,3 @@ export default function App() {
     </div>
   );
 }
-
-
