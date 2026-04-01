@@ -1356,6 +1356,8 @@ export default function App() {
               </div>
             );
           })()}
+
+          {activeTab==='add' && (
             <div className="max-w-3xl mx-auto space-y-6">
               <div className="p-6 md:p-10 rounded-2xl" style={{background:'white', boxShadow:'0 4px 24px rgba(15,76,92,0.1)'}}>
                 <h2 className="text-2xl font-black mb-8 pb-5 flex items-center gap-3" style={{color:'#0f4c5c', borderBottom:'2px solid #f0fdfa'}}>
