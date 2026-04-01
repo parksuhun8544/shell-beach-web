@@ -8,7 +8,8 @@ import { getAuth, signInAnonymously } from 'firebase/auth';
 import {
   Calendar, PlusCircle, BarChart3, ChevronLeft,
   ChevronRight, BedDouble, X, Users, Wallet, Trash2,
-  Search, Check, TableProperties, Lock, Phone, Settings, Download
+  Search, Check, TableProperties, Lock, Phone, Settings, Download,
+  Copy, AlertCircle, TrendingUp, List
 } from 'lucide-react';
 
 // --- 1. 공휴일 및 요금 로직 ---
@@ -444,6 +445,8 @@ export default function App() {
   const [manualPrice, setManualPrice] = useState('');
   const [manualPriceMode, setManualPriceMode] = useState('total');
   const [roomTouched, setRoomTouched] = useState(false);
+  const [calendarView, setCalendarView] = useState('month'); // 'month' | 'week'
+  const [searchFilter, setSearchFilter] = useState('all'); // 'all' | 'nophone'
   const [formData, setFormData] = useState({
     date: getLocalTodayStr(), room:'Shell', name:'', phone:'010',
     adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접'
@@ -530,20 +533,29 @@ export default function App() {
   const stats = useMemo(() => {
     let revenue = 0;
     const monthlyMap = {};
+    const monthlyNights = {}; // 객실별 점유박수
+    const pathMap = {}; // 경로별 매출
     reservations.forEach(r => {
       if (!r.date || !r.room || !r.nights) return;
       const totalP = Number(r.price) || 0;
       const perNight = Math.round(totalP / r.nights);
       revenue += totalP;
+      // 경로별
+      const path = r.path || '기타';
+      if (!pathMap[path]) pathMap[path] = { revenue:0, count:0 };
+      pathMap[path].revenue += totalP;
+      pathMap[path].count += 1;
       for (let i = 0; i < r.nights; i++) {
         const ds = addDays(r.date, i);
         const ym = ds.slice(0, 7);
         if (!monthlyMap[ym]) monthlyMap[ym] = { Shell:0, Beach:0, Pine:0, total:0 };
         monthlyMap[ym][r.room] += perNight;
         monthlyMap[ym].total += perNight;
+        if (!monthlyNights[ym]) monthlyNights[ym] = { Shell:0, Beach:0, Pine:0 };
+        monthlyNights[ym][r.room] += 1;
       }
     });
-    return { revenue, count:reservations.length, monthlyMap };
+    return { revenue, count:reservations.length, monthlyMap, monthlyNights, pathMap };
   }, [reservations]);
 
   const getPricePerNight = React.useCallback((room, dateStr) =>
@@ -569,10 +581,14 @@ export default function App() {
   }, [manualPrice, manualPriceMode, formData.nights, extraPrice]);
 
   const filteredReservations = useMemo(() => {
-    if (!searchTerm) return [...reservations].sort((a,b) => a.date?.localeCompare(b.date));
-    const s = searchTerm.toLowerCase();
-    return reservations.filter(r => r.name?.includes(s) || r.phone?.includes(s));
-  }, [reservations, searchTerm]);
+    let list = [...reservations].sort((a,b) => a.date?.localeCompare(b.date));
+    if (searchFilter === 'nophone') list = list.filter(r => !r.phone || r.phone === '010');
+    if (searchTerm) {
+      const s = searchTerm.toLowerCase();
+      list = list.filter(r => r.name?.includes(s) || r.phone?.includes(s));
+    }
+    return list;
+  }, [reservations, searchTerm, searchFilter]);
 
   const resetModal = () => {
     setIsModalOpen(false); setEditTarget(null); setSelectedResId(null);
@@ -713,6 +729,13 @@ export default function App() {
             style={{background:'#f0fdfa', color:'#0f4c5c'}}>
             {PATHS.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
+        </div>
+        <div className="flex flex-col md:col-span-2">
+          <label className="text-[10px] font-bold ml-1 mb-1" style={{color:'#94a3b8'}}>메모</label>
+          <input type="text" placeholder="특이사항, 요청사항 등" value={formData.memo}
+            onChange={e => setFormData({ ...formData, memo:e.target.value })}
+            className="p-3 rounded-xl font-bold border-none outline-none text-sm"
+            style={{background:'#fffbeb', color:'#92400e'}} />
         </div>
       </div>
 
@@ -928,23 +951,71 @@ export default function App() {
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-1.5 p-1.5 rounded-xl mt-3 md:mt-0" style={{background:'#f0fdfa'}}>
-                  <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1,1))}
-                    className="p-1.5 rounded-lg transition-all hover:bg-white" style={{color:'#0d9488'}}><ChevronLeft size={18} /></button>
-                  <button onClick={() => setViewDate(new Date())}
-                    className="px-4 font-bold text-[11px] rounded-lg transition-all" style={{color:'#0d9488'}}>오늘</button>
-                  <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()+1,1))}
-                    className="p-1.5 rounded-lg transition-all hover:bg-white" style={{color:'#0d9488'}}><ChevronRight size={18} /></button>
+                <div className="flex items-center gap-2 mt-3 md:mt-0">
+                  {/* 주간/월간 토글 */}
+                  <div className="flex gap-1 p-1 rounded-xl" style={{background:'#f0fdfa'}}>
+                    <button onClick={() => setCalendarView('month')}
+                      className="px-3 py-1.5 rounded-lg text-xs font-black transition-all"
+                      style={{background: calendarView==='month' ? '#0d9488' : 'transparent', color: calendarView==='month' ? 'white' : '#0d9488'}}>
+                      월
+                    </button>
+                    <button onClick={() => setCalendarView('week')}
+                      className="px-3 py-1.5 rounded-lg text-xs font-black transition-all"
+                      style={{background: calendarView==='week' ? '#0d9488' : 'transparent', color: calendarView==='week' ? 'white' : '#0d9488'}}>
+                      주
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5 p-1.5 rounded-xl" style={{background:'#f0fdfa'}}>
+                    <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1,1))}
+                      className="p-1.5 rounded-lg transition-all hover:bg-white" style={{color:'#0d9488'}}><ChevronLeft size={18} /></button>
+                    <button onClick={() => setViewDate(new Date())}
+                      className="px-4 font-bold text-[11px] rounded-lg transition-all" style={{color:'#0d9488'}}>오늘</button>
+                    <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()+1,1))}
+                      className="p-1.5 rounded-lg transition-all hover:bg-white" style={{color:'#0d9488'}}><ChevronRight size={18} /></button>
+                  </div>
                 </div>
               </header>
+
+              {/* 요약 카드 */}
+              {(() => {
+                const today = getLocalTodayStr();
+                const ym = `${viewDate.getFullYear()}-${String(viewDate.getMonth()+1).padStart(2,'0')}`;
+                const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth()+1, 0).getDate();
+                // 이번달 남은 날
+                let remainEmpty = 0;
+                for (let d = 1; d <= daysInMonth; d++) {
+                  const ds = `${ym}-${String(d).padStart(2,'0')}`;
+                  if (ds >= today && (!reservationMap[ds] || reservationMap[ds].length < 3)) remainEmpty++;
+                }
+                // 다음달 예약 건수
+                const nextYm = (() => { const nd = new Date(viewDate.getFullYear(), viewDate.getMonth()+1, 1); return `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}`; })();
+                const nextMonthCount = reservations.filter(r => r.date?.startsWith(nextYm)).length;
+                // 이번달 점유박수
+                const nights = stats.monthlyNights[ym] || {Shell:0,Beach:0,Pine:0};
+                return (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      {label:'이번달 잔여일', value:`${remainEmpty}일`, sub:'빈 날짜', color:'#0d9488'},
+                      {label:'다음달 예약', value:`${nextMonthCount}건`, sub:'확정', color:'#f97316'},
+                      {label:'Shell 점유', value:`${nights.Shell}박`, sub:'이번달', color:'#f43f5e'},
+                      {label:'Beach·Pine', value:`${nights.Beach+nights.Pine}박`, sub:'이번달', color:'#8b5cf6'},
+                    ].map(c => (
+                      <div key={c.label} className="p-4 rounded-2xl" style={{background:'white', boxShadow:'0 2px 12px rgba(15,76,92,0.06)'}}>
+                        <p className="text-[10px] font-bold" style={{color:'#94a3b8'}}>{c.label}</p>
+                        <p className="text-2xl font-black mt-1" style={{color:c.color}}>{c.value}</p>
+                        <p className="text-[10px] font-bold mt-0.5" style={{color:'#cbd5e1'}}>{c.sub}</p>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* 월간 뷰 */}
+              {calendarView === 'month' && (
               <div className="grid grid-cols-7 rounded-2xl overflow-hidden" style={{background:'white', boxShadow:'0 4px 24px rgba(15,76,92,0.1)', border:'1px solid rgba(15,76,92,0.08)'}}>
                 {['일','월','화','수','목','금','토'].map((d,i) => (
                   <div key={d} className="p-2 text-center text-[10px] font-black border-b"
-                    style={{
-                      borderColor:'rgba(15,76,92,0.08)',
-                      color: i===0?'#f43f5e': i===6?'#0d9488':'#94a3b8',
-                      background: i===0?'#fff1f2': i===6?'#f0fdfa':'#fafaf9'
-                    }}>{d}</div>
+                    style={{borderColor:'rgba(15,76,92,0.08)', color: i===0?'#f43f5e': i===6?'#0d9488':'#94a3b8', background: i===0?'#fff1f2': i===6?'#f0fdfa':'#fafaf9'}}>{d}</div>
                 ))}
                 {Array.from({length:42}).map((_,i) => {
                   const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay();
@@ -957,6 +1028,13 @@ export default function App() {
                   const holidayName = dateStr ? (rateConfig.holidayNames?.[dateStr] || null) : null;
                   const isHoliday = dateStr ? (new Set(rateConfig.holidays||[]).has(dateStr)) : false;
                   const dow = dateStr ? new Date(dateStr+'T00:00:00').getDay() : -1;
+                  const today = getLocalTodayStr();
+                  const isToday = dateStr === today;
+                  // D-1 체크아웃: 내일 체크아웃하는 예약이 있는지 (오늘이 마지막 박)
+                  const hasDayMinus1 = dateStr ? reservations.some(r => {
+                    const checkout = addDays(r.date, r.nights||1);
+                    return addDays(dateStr, 1) === checkout;
+                  }) : false;
                   return (
                     <div key={i} onClick={() => {
                       if (!dateStr) return;
@@ -965,16 +1043,22 @@ export default function App() {
                       setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(false);
                       setIsModalOpen(true);
                     }}
-                      className="min-h-[80px] md:min-h-[110px] p-1.5 border-r border-b cursor-pointer transition-all"
-                      style={{
-                        borderColor:'rgba(15,76,92,0.06)',
-                        background: !dateStr ? '#faf9f7' : isHoliday ? '#fff1f2' : 'white'
-                      }}
-                      onMouseEnter={e => { if(dateStr) e.currentTarget.style.background = isHoliday ? '#ffe4e6' : '#f0fdfa'; }}
-                      onMouseLeave={e => { if(dateStr) e.currentTarget.style.background = isHoliday ? '#fff1f2' : 'white'; }}>
+                      className="min-h-[80px] md:min-h-[110px] p-1.5 border-r border-b cursor-pointer transition-all relative"
+                      style={{borderColor:'rgba(15,76,92,0.06)', background: !dateStr ? '#faf9f7' : isToday ? '#f0fdfa' : isHoliday ? '#fff1f2' : 'white'}}
+                      onMouseEnter={e => { if(dateStr) e.currentTarget.style.background = '#e0f9f5'; }}
+                      onMouseLeave={e => { if(dateStr) e.currentTarget.style.background = !dateStr ? '#faf9f7' : isToday ? '#f0fdfa' : isHoliday ? '#fff1f2' : 'white'; }}>
                       {dateStr && (
                         <>
-                          <span className="text-xs font-black" style={{color: dow===0||isHoliday ? '#f43f5e' : dow===6 ? '#0d9488' : '#334155'}}>{day}</span>
+                          <div className="flex items-center gap-1">
+                            {isToday ? (
+                              <span className="text-xs font-black w-5 h-5 rounded-full flex items-center justify-center text-white" style={{background:'#0d9488'}}>{day}</span>
+                            ) : (
+                              <span className="text-xs font-black" style={{color: dow===0||isHoliday ? '#f43f5e' : dow===6 ? '#0d9488' : '#334155'}}>{day}</span>
+                            )}
+                            {hasDayMinus1 && (
+                              <span className="text-[7px] font-black px-1 rounded" style={{background:'#fef3c7', color:'#d97706'}}>D-1</span>
+                            )}
+                          </div>
                           {holidayName && (
                             <div className="text-[7px] font-black leading-tight truncate" style={{color:'#f43f5e'}}>{holidayName}</div>
                           )}
@@ -1007,6 +1091,90 @@ export default function App() {
                   );
                 })}
               </div>
+              )}
+
+              {/* 주간 뷰 */}
+              {calendarView === 'week' && (() => {
+                const today = getLocalTodayStr();
+                // viewDate 기준 해당 주 일요일 찾기
+                const base = new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate());
+                const sundayOffset = base.getDay();
+                const sunday = new Date(base); sunday.setDate(base.getDate() - sundayOffset);
+                const weekDates = Array.from({length:7}, (_,i) => {
+                  const d = new Date(sunday); d.setDate(sunday.getDate()+i);
+                  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                });
+                return (
+                  <div className="rounded-2xl overflow-hidden" style={{background:'white', boxShadow:'0 4px 24px rgba(15,76,92,0.1)'}}>
+                    <div className="grid grid-cols-7 border-b" style={{borderColor:'rgba(15,76,92,0.08)'}}>
+                      {['일','월','화','수','목','금','토'].map((d,i) => (
+                        <div key={d} className="p-2 text-center text-[10px] font-black"
+                          style={{color: i===0?'#f43f5e': i===6?'#0d9488':'#94a3b8', background: i===0?'#fff1f2': i===6?'#f0fdfa':'#fafaf9'}}>{d}</div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7">
+                      {weekDates.map((dateStr, i) => {
+                        const d = new Date(dateStr+'T00:00:00');
+                        const dayRes = reservationMap[dateStr]||[];
+                        const isToday = dateStr === today;
+                        const isHoliday = new Set(rateConfig.holidays||[]).has(dateStr);
+                        const holidayName = rateConfig.holidayNames?.[dateStr] || null;
+                        const hasDayMinus1 = reservations.some(r => addDays(dateStr,1) === addDays(r.date, r.nights||1));
+                        return (
+                          <div key={dateStr} onClick={() => {
+                            setFormData({ date:dateStr, room:'Shell', name:'', phone:'010', adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접' });
+                            setEditTarget(null); setSelectedResId(null);
+                            setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(false);
+                            setIsModalOpen(true);
+                          }}
+                            className="min-h-[140px] p-2 border-r cursor-pointer transition-all"
+                            style={{borderColor:'rgba(15,76,92,0.06)', background: isToday ? '#f0fdfa' : isHoliday ? '#fff1f2' : 'white'}}
+                            onMouseEnter={e => e.currentTarget.style.background='#e0f9f5'}
+                            onMouseLeave={e => e.currentTarget.style.background= isToday ? '#f0fdfa' : isHoliday ? '#fff1f2' : 'white'}>
+                            <div className="flex items-center gap-1 mb-1">
+                              {isToday ? (
+                                <span className="text-sm font-black w-6 h-6 rounded-full flex items-center justify-center text-white" style={{background:'#0d9488'}}>{d.getDate()}</span>
+                              ) : (
+                                <span className="text-sm font-black" style={{color: i===0||isHoliday?'#f43f5e':i===6?'#0d9488':'#334155'}}>{d.getDate()}</span>
+                              )}
+                              {hasDayMinus1 && <span className="text-[8px] font-black px-1 rounded" style={{background:'#fef3c7',color:'#d97706'}}>D-1</span>}
+                            </div>
+                            {holidayName && <div className="text-[8px] font-black mb-1 truncate" style={{color:'#f43f5e'}}>{holidayName}</div>}
+                            <div className="space-y-1">
+                              {['Shell','Beach','Pine'].map(roomId => {
+                                const r = dayRes.find(x => x.room === roomId);
+                                const colors = {Shell:{bg:'#fff1f2',text:'#be123c',border:'#fecdd3'},Beach:{bg:'#f0f9ff',text:'#0369a1',border:'#bae6fd'},Pine:{bg:'#f0fdf4',text:'#15803d',border:'#bbf7d0'}};
+                                const c = colors[roomId];
+                                return (
+                                  <div key={roomId} className="text-[9px] p-1 rounded-lg font-bold"
+                                    style={{background: r ? c.bg : '#f8fafc', color: r ? c.text : '#cbd5e1', border:`1px solid ${r ? c.border : '#f1f5f9'}`}}>
+                                    <span className="opacity-60">{roomId[0]}</span>
+                                    {r ? <span className="ml-1 truncate block">{r.name}</span> : <span className="ml-1 opacity-30">—</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* 주간 이동 버튼 */}
+                    <div className="flex justify-between items-center p-3 border-t" style={{borderColor:'rgba(15,76,92,0.08)'}}>
+                      <button onClick={() => setViewDate(new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate()-7))}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold"
+                        style={{background:'#f0fdfa', color:'#0d9488'}}>
+                        <ChevronLeft size={14}/> 이전 주
+                      </button>
+                      <span className="text-xs font-bold" style={{color:'#94a3b8'}}>{weekDates[0].slice(5)} ~ {weekDates[6].slice(5)}</span>
+                      <button onClick={() => setViewDate(new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate()+7))}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold"
+                        style={{background:'#f0fdfa', color:'#0d9488'}}>
+                        다음 주 <ChevronRight size={14}/>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1024,42 +1192,81 @@ export default function App() {
           {activeTab==='search' && (
             <div className="max-w-3xl mx-auto space-y-5">
               <h2 className="text-2xl font-black" style={{color:'#0f4c5c'}}>예약 내역 검색</h2>
-              <div className="relative">
-                <Search className="absolute left-5 top-1/2 -translate-y-1/2" size={20} style={{color:'#0d9488'}} />
-                <input type="text" placeholder="성함 또는 연락처 입력..."
-                  className="w-full p-5 pl-14 text-lg font-bold outline-none rounded-2xl transition-all"
-                  style={{background:'white', border:'2px solid #e2e8f0', color:'#0f4c5c'}}
-                  onFocus={e => e.target.style.borderColor='#0d9488'}
-                  onBlur={e => e.target.style.borderColor='#e2e8f0'}
-                  value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-5 top-1/2 -translate-y-1/2" size={20} style={{color:'#0d9488'}} />
+                  <input type="text" placeholder="성함 또는 연락처 입력..."
+                    className="w-full p-4 pl-14 text-base font-bold outline-none rounded-2xl transition-all"
+                    style={{background:'white', border:'2px solid #e2e8f0', color:'#0f4c5c'}}
+                    onFocus={e => e.target.style.borderColor='#0d9488'}
+                    onBlur={e => e.target.style.borderColor='#e2e8f0'}
+                    value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                </div>
+                {/* 전화번호 미입력 필터 */}
+                <button onClick={() => setSearchFilter(f => f==='nophone'?'all':'nophone')}
+                  className="px-4 py-2 rounded-2xl font-black text-xs flex items-center gap-1.5 transition-all"
+                  style={{
+                    background: searchFilter==='nophone' ? '#f43f5e' : 'white',
+                    color: searchFilter==='nophone' ? 'white' : '#f43f5e',
+                    border: '2px solid #fecdd3'
+                  }}>
+                  <AlertCircle size={14}/> 번호없음
+                </button>
               </div>
+              {searchFilter==='nophone' && (
+                <div className="px-4 py-2 rounded-xl text-xs font-bold" style={{background:'#fff1f2', color:'#f43f5e'}}>
+                  전화번호 미입력 예약 {filteredReservations.length}건 표시 중
+                </div>
+              )}
               <div className="space-y-3">
                 {filteredReservations.length > 0 ? filteredReservations.map(r => {
                   const rc = {Shell:{accent:'#f43f5e',bg:'#fff1f2'}, Beach:{accent:'#0ea5e9',bg:'#f0f9ff'}, Pine:{accent:'#22c55e',bg:'#f0fdf4'}}[r.room]||{accent:'#94a3b8',bg:'#f8fafc'};
                   return (
-                    <div key={r.id} className="p-5 rounded-2xl flex flex-col md:flex-row justify-between md:items-center gap-4 transition-all"
+                    <div key={r.id} className="p-5 rounded-2xl flex flex-col md:flex-row justify-between md:items-start gap-4 transition-all"
                       style={{background:'white', boxShadow:'0 2px 12px rgba(15,76,92,0.06)', borderLeft:`4px solid ${rc.accent}`}}>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-start gap-4 flex-1">
                         <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg shrink-0"
                           style={{background:rc.bg, color:rc.accent}}>
                           {r.room?r.room[0]:'?'}
                         </div>
-                        <div>
+                        <div className="flex-1 min-w-0">
                           <p className="text-lg font-black" style={{color:'#0f4c5c'}}>{r.name}님
                             <span className="text-[11px] font-bold ml-2 px-2 py-0.5 rounded-md uppercase" style={{background:rc.bg, color:rc.accent}}>{r.room}</span>
                           </p>
                           <p className="font-bold mt-0.5 text-xs" style={{color:'#94a3b8'}}>{r.date} 입실 · {r.nights}박 · {r.path||'-'}</p>
-                          {r.phone && (
+                          {r.phone ? (
                             <a href={`tel:${r.phone}`} className="inline-flex items-center gap-1.5 mt-1.5 font-bold hover:underline px-3 py-1 rounded-full text-[11px]"
                               style={{background:rc.bg, color:rc.accent}}>
                               <Phone size={11} /> {formatPhone(r.phone)}
                             </a>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-bold px-3 py-1 rounded-full" style={{background:'#fff1f2', color:'#f43f5e'}}>
+                              <AlertCircle size={10}/> 번호 없음
+                            </span>
+                          )}
+                          {/* 메모 표시 */}
+                          {r.memo && (
+                            <div className="mt-2 text-xs font-bold px-3 py-1.5 rounded-xl" style={{background:'#fffbeb', color:'#92400e'}}>
+                              📝 {r.memo}
+                            </div>
                           )}
                         </div>
                       </div>
-                      <div className="flex justify-between items-center md:flex-col md:items-end gap-1 border-t md:border-t-0 pt-3 md:pt-0" style={{borderColor:'#f1f5f9'}}>
+                      <div className="flex justify-between items-center md:flex-col md:items-end gap-2 border-t md:border-t-0 pt-3 md:pt-0 shrink-0" style={{borderColor:'#f1f5f9'}}>
                         <p className="text-xl font-black" style={{color:'#0f4c5c'}}>₩{(Number(r.price)||0).toLocaleString()}</p>
                         <div className="flex gap-2">
+                          {/* 예약 복사 */}
+                          <button onClick={() => {
+                            setFormData({ date:getLocalTodayStr(), room:r.room, name:r.name, phone:r.phone||'010',
+                              adults:r.adults||0, kids:r.kids||0, bbq:r.bbq||false,
+                              nights:r.nights||1, memo:r.memo||'', path:r.path||'직접' });
+                            setEditTarget(null); setIsManualPrice(false); setManualPrice('');
+                            setManualPriceMode('total'); setRoomTouched(true); setActiveTab('add');
+                            showMsg(`${r.name}님 정보 복사 완료 — 날짜를 변경하세요`, 'success');
+                          }} className="font-black text-[10px] px-3 py-1.5 rounded-lg transition-all flex items-center gap-1"
+                            style={{background:'#f0fdfa', color:'#0d9488'}}>
+                            <Copy size={10}/> 복사
+                          </button>
                           <button onClick={() => {
                             setFormData({ date:r.date, room:r.room, name:r.name, phone:r.phone||'010',
                               adults:r.adults||0, kids:r.kids||0, bbq:r.bbq||false,
@@ -1067,14 +1274,10 @@ export default function App() {
                             setEditTarget(r.id); setIsManualPrice(false); setManualPrice('');
                             setManualPriceMode('total'); setRoomTouched(true); setIsModalOpen(true);
                           }} className="font-black text-[10px] px-3 py-1.5 rounded-lg transition-all"
-                            style={{background:'#f0fdfa', color:'#0d9488'}}
-                            onMouseEnter={e=>{e.target.style.background='#0d9488';e.target.style.color='white'}}
-                            onMouseLeave={e=>{e.target.style.background='#f0fdfa';e.target.style.color='#0d9488'}}>수정</button>
+                            style={{background:'#f0fdfa', color:'#0d9488'}}>수정</button>
                           <button onClick={() => handleDelete(r.id)}
                             className="font-black text-[10px] px-3 py-1.5 rounded-lg transition-all"
-                            style={{background:'#fff1f2', color:'#f43f5e'}}
-                            onMouseEnter={e=>{e.target.style.background='#f43f5e';e.target.style.color='white'}}
-                            onMouseLeave={e=>{e.target.style.background='#fff1f2';e.target.style.color='#f43f5e'}}>삭제</button>
+                            style={{background:'#fff1f2', color:'#f43f5e'}}>삭제</button>
                         </div>
                       </div>
                     </div>
@@ -1102,6 +1305,8 @@ export default function App() {
                 style={{background:'linear-gradient(135deg,#0f4c5c,#0d9488)', boxShadow:'0 4px 16px rgba(13,148,136,0.3)'}}>
                 <Download size={18} /> 전체 예약 CSV 내보내기 ({reservations.length}건)
               </button>
+
+              {/* 핵심 지표 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
                 <div className="p-8 rounded-2xl text-white relative overflow-hidden"
                   style={{background:'linear-gradient(135deg,#0f4c5c,#0d9488)', boxShadow:'0 8px 32px rgba(15,76,92,0.25)'}}>
@@ -1116,6 +1321,38 @@ export default function App() {
                   <p className="text-3xl font-black mt-2" style={{color:'#0f4c5c'}}>{stats.count}건</p>
                 </div>
               </div>
+
+              {/* 예약 경로별 매출 */}
+              <div className="p-6 rounded-2xl" style={{background:'white', boxShadow:'0 4px 16px rgba(15,76,92,0.08)'}}>
+                <h4 className="font-black text-base mb-4 flex items-center gap-2" style={{color:'#0f4c5c'}}>
+                  <TrendingUp size={16} style={{color:'#0d9488'}}/> 예약 경로별 매출
+                </h4>
+                <div className="space-y-2">
+                  {Object.entries(stats.pathMap)
+                    .sort(([,a],[,b]) => b.revenue - a.revenue)
+                    .map(([path, data]) => {
+                      const totalRev = Object.values(stats.pathMap).reduce((s,v)=>s+v.revenue,0);
+                      const pct = totalRev > 0 ? Math.round(data.revenue/totalRev*100) : 0;
+                      return (
+                        <div key={path}>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-xs font-bold" style={{color:'#334155'}}>{path}</span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-bold" style={{color:'#94a3b8'}}>{data.count}건</span>
+                              <span className="text-xs font-black" style={{color:'#0d9488'}}>₩{data.revenue.toLocaleString()}</span>
+                              <span className="text-xs font-black w-10 text-right" style={{color:'#0f4c5c'}}>{pct}%</span>
+                            </div>
+                          </div>
+                          <div className="h-2 rounded-full overflow-hidden" style={{background:'#f0fdfa'}}>
+                            <div className="h-full rounded-full transition-all" style={{width:`${pct}%`, background:'linear-gradient(90deg,#0d9488,#0f4c5c)'}}></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* 월별 매출 + 점유박수 */}
               <div className="p-6 md:p-8 rounded-2xl overflow-x-auto" style={{background:'white', boxShadow:'0 4px 16px rgba(15,76,92,0.08)'}}>
                 <div className="flex items-center justify-between mb-6">
                   <h4 className="font-black text-lg flex items-center gap-2" style={{color:'#0f4c5c'}}>
@@ -1129,23 +1366,29 @@ export default function App() {
                       className="p-1.5 rounded-lg" style={{color:'#0d9488'}}><ChevronRight size={16} /></button>
                   </div>
                 </div>
-                <table className="w-full text-left min-w-[520px]">
+                <table className="w-full text-left min-w-[600px]">
                   <thead>
                     <tr className="text-[11px] font-black uppercase" style={{borderBottom:'2px solid #f0fdfa', color:'#94a3b8'}}>
-                      <th className="py-4 pl-4">월</th><th>Shell</th><th>Beach</th><th>Pine</th>
-                      <th className="py-4 pr-4 text-right" style={{color:'#0f4c5c'}}>합계</th>
+                      <th className="py-3 pl-4">월</th>
+                      <th>Shell</th><th>Beach</th><th>Pine</th>
+                      <th style={{color:'#64748b'}}>Shell박</th><th style={{color:'#64748b'}}>Beach박</th><th style={{color:'#64748b'}}>Pine박</th>
+                      <th className="py-3 pr-4 text-right" style={{color:'#0f4c5c'}}>합계</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs">
                     {Array.from({length:12}, (_,i) => {
                       const ym = `${viewDate.getFullYear()}-${String(i+1).padStart(2,'0')}`;
                       const s = stats.monthlyMap[ym] || { Shell:0, Beach:0, Pine:0, total:0 };
+                      const n = stats.monthlyNights[ym] || { Shell:0, Beach:0, Pine:0 };
                       return (
-                        <tr key={i} className="transition-all" style={{borderBottom:'1px solid #f8fafc', opacity: s.total===0?0.2:1}}>
-                          <td className="py-4 pl-4 font-bold" style={{color:'#334155'}}>{i+1}월</td>
-                          <td style={{color:'#64748b'}}>₩{s.Shell.toLocaleString()}</td>
-                          <td style={{color:'#64748b'}}>₩{s.Beach.toLocaleString()}</td>
-                          <td style={{color:'#64748b'}}>₩{s.Pine.toLocaleString()}</td>
+                        <tr key={i} className="transition-all" style={{borderBottom:'1px solid #f8fafc', opacity: s.total===0?0.25:1}}>
+                          <td className="py-3 pl-4 font-bold" style={{color:'#334155'}}>{i+1}월</td>
+                          <td style={{color:'#be123c'}}>₩{s.Shell.toLocaleString()}</td>
+                          <td style={{color:'#0369a1'}}>₩{s.Beach.toLocaleString()}</td>
+                          <td style={{color:'#15803d'}}>₩{s.Pine.toLocaleString()}</td>
+                          <td className="text-center"><span className="px-1.5 py-0.5 rounded text-[10px] font-black" style={{background:'#fff1f2', color:'#be123c'}}>{n.Shell}박</span></td>
+                          <td className="text-center"><span className="px-1.5 py-0.5 rounded text-[10px] font-black" style={{background:'#f0f9ff', color:'#0369a1'}}>{n.Beach}박</span></td>
+                          <td className="text-center"><span className="px-1.5 py-0.5 rounded text-[10px] font-black" style={{background:'#f0fdf4', color:'#15803d'}}>{n.Pine}박</span></td>
                           <td className="pr-4 font-black text-right" style={{color:'#0d9488'}}>₩{s.total.toLocaleString()}</td>
                         </tr>
                       );
