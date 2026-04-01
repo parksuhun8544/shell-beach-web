@@ -938,7 +938,7 @@ export default function App() {
                                 <div key={roomId} className={`text-[8px] p-0.5 rounded-md border font-bold truncate flex items-center gap-0.5
                                   ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-slate-100'}`}>
                                   <div className={`w-1 h-1 rounded-full shrink-0 ${ROOMS.find(rm=>rm.id===r.room)?.dot||'bg-slate-300'}`}></div>
-                                  <span className="shrink-0 opacity-70">{roomId}</span>
+                                  <span className="shrink-0 opacity-70">{roomId[0]}</span>
                                   <span className="truncate ml-0.5">{r.name}</span>
                                 </div>
                               );
