@@ -9,7 +9,7 @@ import {
   Calendar, PlusCircle, BarChart3, ChevronLeft,
   ChevronRight, BedDouble, X, Users, Wallet, Trash2,
   Search, Check, TableProperties, Lock, Phone, Settings, Download,
-  Copy, AlertCircle, TrendingUp, List
+  Copy, AlertCircle, TrendingUp, List, Ban, CalendarDays, Repeat2
 } from 'lucide-react';
 
 // --- 1. 공휴일 및 요금 로직 ---
@@ -445,8 +445,9 @@ export default function App() {
   const [manualPrice, setManualPrice] = useState('');
   const [manualPriceMode, setManualPriceMode] = useState('total');
   const [roomTouched, setRoomTouched] = useState(false);
-  const [calendarView, setCalendarView] = useState('month'); // 'month' | 'week'
+  const [calendarView, setCalendarView] = useState('month'); // 'month' | 'week' | 'year'
   const [searchFilter, setSearchFilter] = useState('all'); // 'all' | 'nophone'
+  const [blockDates, setBlockDates] = useState({}); // { 'YYYY-MM-DD': { Shell, Beach, Pine } }
   const [formData, setFormData] = useState({
     date: getLocalTodayStr(), room:'Shell', name:'', phone:'010',
     adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접'
@@ -479,7 +480,10 @@ export default function App() {
         // rateConfig 로드
         let loadedCfg = DEFAULT_RATE_CONFIG;
         const cfgSnap = await getDocs(collection(db,'config'));
-        cfgSnap.forEach(d => { if (d.id === 'rateConfig') loadedCfg = d.data(); });
+        cfgSnap.forEach(d => {
+          if (d.id === 'rateConfig') loadedCfg = d.data();
+          if (d.id === 'blockDates') setBlockDates(d.data() || {});
+        });
         setRateConfig(loadedCfg);
 
         // 공휴일 자동 갱신 (24시간 주기)
@@ -528,23 +532,34 @@ export default function App() {
   }, [reservations]);
 
   const isRoomFull = (roomType, dateStr, excludeId=null) =>
-    reservationMap[dateStr]?.some(r => r.room === roomType && r.id !== excludeId) ?? false;
+    (reservationMap[dateStr]?.some(r => r.room === roomType && r.id !== excludeId) ?? false)
+    || (blockDates[dateStr]?.[roomType] ?? false);
 
   const stats = useMemo(() => {
     let revenue = 0;
     const monthlyMap = {};
-    const monthlyNights = {}; // 객실별 점유박수
-    const pathMap = {}; // 경로별 매출
+    const monthlyNights = {};
+    const pathMap = {};
+    const nameCount = {}; // 재방문 감지
+    const phoneCount = {};
+    const roomNightTotal = { Shell:0, Beach:0, Pine:0 };
+    const roomRevTotal = { Shell:0, Beach:0, Pine:0 };
     reservations.forEach(r => {
       if (!r.date || !r.room || !r.nights) return;
       const totalP = Number(r.price) || 0;
       const perNight = Math.round(totalP / r.nights);
       revenue += totalP;
+      // 재방문
+      if (r.name) nameCount[r.name] = (nameCount[r.name]||0) + 1;
+      if (r.phone && r.phone !== '010') phoneCount[r.phone] = (phoneCount[r.phone]||0) + 1;
       // 경로별
       const path = r.path || '기타';
       if (!pathMap[path]) pathMap[path] = { revenue:0, count:0 };
       pathMap[path].revenue += totalP;
       pathMap[path].count += 1;
+      // 객실별 평균단가
+      roomNightTotal[r.room] = (roomNightTotal[r.room]||0) + r.nights;
+      roomRevTotal[r.room] = (roomRevTotal[r.room]||0) + totalP;
       for (let i = 0; i < r.nights; i++) {
         const ds = addDays(r.date, i);
         const ym = ds.slice(0, 7);
@@ -555,7 +570,14 @@ export default function App() {
         monthlyNights[ym][r.room] += 1;
       }
     });
-    return { revenue, count:reservations.length, monthlyMap, monthlyNights, pathMap };
+    const avgPrice = {
+      Shell: roomNightTotal.Shell > 0 ? Math.round(roomRevTotal.Shell / roomNightTotal.Shell) : 0,
+      Beach: roomNightTotal.Beach > 0 ? Math.round(roomRevTotal.Beach / roomNightTotal.Beach) : 0,
+      Pine:  roomNightTotal.Pine  > 0 ? Math.round(roomRevTotal.Pine  / roomNightTotal.Pine)  : 0,
+    };
+    const revisitNames = new Set(Object.entries(nameCount).filter(([,v])=>v>=2).map(([k])=>k));
+    const revisitPhones = new Set(Object.entries(phoneCount).filter(([,v])=>v>=2).map(([k])=>k));
+    return { revenue, count:reservations.length, monthlyMap, monthlyNights, pathMap, avgPrice, revisitNames, revisitPhones };
   }, [reservations]);
 
   const getPricePerNight = React.useCallback((room, dateStr) =>
@@ -593,6 +615,17 @@ export default function App() {
   const resetModal = () => {
     setIsModalOpen(false); setEditTarget(null); setSelectedResId(null);
     setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(false);
+  };
+
+  const toggleBlockRoom = async (dateStr, roomId) => {
+    const cur = blockDates[dateStr] || {};
+    const updated = { ...blockDates, [dateStr]: { ...cur, [roomId]: !cur[roomId] } };
+    // 해당 날짜 모든 방이 false면 키 제거
+    if (!updated[dateStr].Shell && !updated[dateStr].Beach && !updated[dateStr].Pine)
+      delete updated[dateStr];
+    setBlockDates(updated);
+    try { await setDoc(doc(db,'config','blockDates'), updated); }
+    catch { showMsg('블락 저장 실패','error'); }
   };
 
   const saveStateRef = React.useRef({});
@@ -870,8 +903,9 @@ export default function App() {
 
   const NAV_ITEMS = [
     { id:'calendar', icon:Calendar, label:'현황판' },
+    { id:'future', icon:List, label:'예약목록' },
     { id:'add', icon:PlusCircle, label:'예약 등록' },
-    { id:'search', icon:Search, label:'예약 검색' },
+    { id:'search', icon:Search, label:'검색' },
     { id:'stats', icon:BarChart3, label:'통계' },
     { id:'settings', icon:Settings, label:'설정' },
   ];
@@ -952,18 +986,15 @@ export default function App() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-3 md:mt-0">
-                  {/* 주간/월간 토글 */}
+                  {/* 주간/월간/연간 토글 */}
                   <div className="flex gap-1 p-1 rounded-xl" style={{background:'#f0fdfa'}}>
-                    <button onClick={() => setCalendarView('month')}
-                      className="px-3 py-1.5 rounded-lg text-xs font-black transition-all"
-                      style={{background: calendarView==='month' ? '#0d9488' : 'transparent', color: calendarView==='month' ? 'white' : '#0d9488'}}>
-                      월
-                    </button>
-                    <button onClick={() => setCalendarView('week')}
-                      className="px-3 py-1.5 rounded-lg text-xs font-black transition-all"
-                      style={{background: calendarView==='week' ? '#0d9488' : 'transparent', color: calendarView==='week' ? 'white' : '#0d9488'}}>
-                      주
-                    </button>
+                    {[{id:'month',label:'월'},{ id:'week',label:'주'},{id:'year',label:'연'}].map(v => (
+                      <button key={v.id} onClick={() => setCalendarView(v.id)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-black transition-all"
+                        style={{background: calendarView===v.id ? '#0d9488' : 'transparent', color: calendarView===v.id ? 'white' : '#0d9488'}}>
+                        {v.label}
+                      </button>
+                    ))}
                   </div>
                   <div className="flex gap-1.5 p-1.5 rounded-xl" style={{background:'#f0fdfa'}}>
                     <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1,1))}
@@ -1030,11 +1061,6 @@ export default function App() {
                   const dow = dateStr ? new Date(dateStr+'T00:00:00').getDay() : -1;
                   const today = getLocalTodayStr();
                   const isToday = dateStr === today;
-                  // D-1 체크아웃: 내일 체크아웃하는 예약이 있는지 (오늘이 마지막 박)
-                  const hasDayMinus1 = dateStr ? reservations.some(r => {
-                    const checkout = addDays(r.date, r.nights||1);
-                    return addDays(dateStr, 1) === checkout;
-                  }) : false;
                   return (
                     <div key={i} onClick={() => {
                       if (!dateStr) return;
@@ -1055,9 +1081,6 @@ export default function App() {
                             ) : (
                               <span className="text-xs font-black" style={{color: dow===0||isHoliday ? '#f43f5e' : dow===6 ? '#0d9488' : '#334155'}}>{day}</span>
                             )}
-                            {hasDayMinus1 && (
-                              <span className="text-[7px] font-black px-1 rounded" style={{background:'#fef3c7', color:'#d97706'}}>D-1</span>
-                            )}
                           </div>
                           {holidayName && (
                             <div className="text-[7px] font-black leading-tight truncate" style={{color:'#f43f5e'}}>{holidayName}</div>
@@ -1068,13 +1091,22 @@ export default function App() {
                           <div className="mt-0.5 space-y-0.5">
                             {['Shell','Beach','Pine'].map(roomId => {
                               const r = dayRes.find(x => x.room === roomId);
-                              if (!r) return null;
+                              const isBlocked = blockDates[dateStr]?.[roomId];
+                              if (!r && !isBlocked) return null;
                               const colors = {
                                 Shell: {bg:'#fff1f2', text:'#be123c', border:'#fecdd3', dot:'#f43f5e'},
                                 Beach: {bg:'#f0f9ff', text:'#0369a1', border:'#bae6fd', dot:'#0ea5e9'},
                                 Pine:  {bg:'#f0fdf4', text:'#15803d', border:'#bbf7d0', dot:'#22c55e'},
                               };
                               const c = colors[roomId];
+                              if (isBlocked && !r) return (
+                                <div key={roomId} className="text-[8px] p-0.5 rounded-md font-bold truncate flex items-center gap-0.5"
+                                  style={{background:'#f1f5f9', color:'#94a3b8', border:'1px solid #e2e8f0'}}>
+                                  <Ban size={6} className="shrink-0"/>
+                                  <span className="shrink-0 opacity-70">{roomId[0]}</span>
+                                  <span className="truncate ml-0.5 opacity-60">블락</span>
+                                </div>
+                              );
                               return (
                                 <div key={roomId} className="text-[8px] p-0.5 rounded-md font-bold truncate flex items-center gap-0.5"
                                   style={{background:c.bg, color:c.text, border:`1px solid ${c.border}`}}>
@@ -1119,7 +1151,6 @@ export default function App() {
                         const isToday = dateStr === today;
                         const isHoliday = new Set(rateConfig.holidays||[]).has(dateStr);
                         const holidayName = rateConfig.holidayNames?.[dateStr] || null;
-                        const hasDayMinus1 = reservations.some(r => addDays(dateStr,1) === addDays(r.date, r.nights||1));
                         return (
                           <div key={dateStr} onClick={() => {
                             setFormData({ date:dateStr, room:'Shell', name:'', phone:'010', adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접' });
@@ -1137,7 +1168,6 @@ export default function App() {
                               ) : (
                                 <span className="text-sm font-black" style={{color: i===0||isHoliday?'#f43f5e':i===6?'#0d9488':'#334155'}}>{d.getDate()}</span>
                               )}
-                              {hasDayMinus1 && <span className="text-[8px] font-black px-1 rounded" style={{background:'#fef3c7',color:'#d97706'}}>D-1</span>}
                             </div>
                             {holidayName && <div className="text-[8px] font-black mb-1 truncate" style={{color:'#f43f5e'}}>{holidayName}</div>}
                             <div className="space-y-1">
@@ -1175,10 +1205,157 @@ export default function App() {
                   </div>
                 );
               })()}
+
+              {/* 연간 뷰 */}
+              {calendarView === 'year' && (
+                <div className="space-y-3">
+                  {Array.from({length:12}, (_,mi) => {
+                    const ym = `${viewDate.getFullYear()}-${String(mi+1).padStart(2,'0')}`;
+                    const daysInMonth = new Date(viewDate.getFullYear(), mi+1, 0).getDate();
+                    const firstDay = new Date(viewDate.getFullYear(), mi, 1).getDay();
+                    const monthRevenue = stats.monthlyMap[ym]?.total || 0;
+                    return (
+                      <div key={mi} className="p-4 rounded-2xl" style={{background:'white', boxShadow:'0 2px 12px rgba(15,76,92,0.06)'}}>
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="font-black text-sm" style={{color:'#0f4c5c'}}>{mi+1}월</span>
+                          {monthRevenue > 0 && <span className="text-xs font-black" style={{color:'#0d9488'}}>₩{monthRevenue.toLocaleString()}</span>}
+                        </div>
+                        <div className="grid grid-cols-7 gap-0.5">
+                          {['일','월','화','수','목','금','토'].map((d,i) => (
+                            <div key={d} className="text-center text-[8px] font-black pb-1"
+                              style={{color: i===0?'#f43f5e': i===6?'#0d9488':'#94a3b8'}}>{d}</div>
+                          ))}
+                          {Array.from({length: firstDay}, (_,i) => <div key={`e${i}`}/>)}
+                          {Array.from({length:daysInMonth}, (_,di) => {
+                            const d = di+1;
+                            const ds = `${ym}-${String(d).padStart(2,'0')}`;
+                            const dayRes = reservationMap[ds]||[];
+                            const isToday = ds === getLocalTodayStr();
+                            const isHoliday = new Set(rateConfig.holidays||[]).has(ds);
+                            const dow = new Date(ds+'T00:00:00').getDay();
+                            const hasBlock = ['Shell','Beach','Pine'].some(r => blockDates[ds]?.[r]);
+                            return (
+                              <div key={d} onClick={() => {
+                                setFormData({ date:ds, room:'Shell', name:'', phone:'010', adults:0, kids:0, bbq:false, nights:1, memo:'', path:'직접' });
+                                setEditTarget(null); setSelectedResId(null);
+                                setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(false);
+                                setIsModalOpen(true);
+                              }}
+                                className="aspect-square flex flex-col items-center justify-center rounded-md cursor-pointer text-[9px] font-black transition-all relative"
+                                style={{
+                                  background: isToday ? '#0d9488' : dayRes.length===3 ? '#0f4c5c' : dayRes.length>0 ? '#e0f9f5' : isHoliday ? '#fff1f2' : 'transparent',
+                                  color: isToday ? 'white' : dayRes.length===3 ? 'white' : isHoliday||dow===0 ? '#f43f5e' : dow===6 ? '#0d9488' : '#334155'
+                                }}>
+                                {d}
+                                {hasBlock && !dayRes.length && <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style={{background:'#94a3b8'}}/>}
+                                {dayRes.length > 0 && !isToday && dayRes.length < 3 && (
+                                  <div className="flex gap-0.5 mt-0.5">
+                                    {dayRes.map((r,i) => {
+                                      const dot = {Shell:'#f43f5e',Beach:'#0ea5e9',Pine:'#22c55e'}[r.room]||'#94a3b8';
+                                      return <div key={i} className="w-1 h-1 rounded-full" style={{background:dot}}/>;
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
-          {activeTab==='add' && (
+          {/* 미래 예약 목록 탭 */}
+          {activeTab==='future' && (() => {
+            const today = getLocalTodayStr();
+            const upcoming = [...reservations]
+              .filter(r => r.date >= today)
+              .sort((a,b) => a.date.localeCompare(b.date));
+            const past = [...reservations]
+              .filter(r => r.date < today)
+              .sort((a,b) => b.date.localeCompare(a.date))
+              .slice(0,10);
+            return (
+              <div className="max-w-3xl mx-auto space-y-5">
+                <h2 className="text-2xl font-black flex items-center gap-2" style={{color:'#0f4c5c'}}>
+                  <CalendarDays size={22} style={{color:'#0d9488'}}/> 예약 목록
+                </h2>
+                {upcoming.length === 0 && (
+                  <div className="p-12 text-center rounded-2xl border-2 border-dashed font-bold text-sm" style={{color:'#94a3b8', borderColor:'#e2e8f0'}}>
+                    예정된 예약이 없습니다.
+                  </div>
+                )}
+                <div className="space-y-2">
+                  {upcoming.map(r => {
+                    const rc = {Shell:{accent:'#f43f5e',bg:'#fff1f2'},Beach:{accent:'#0ea5e9',bg:'#f0f9ff'},Pine:{accent:'#22c55e',bg:'#f0fdf4'}}[r.room]||{accent:'#94a3b8',bg:'#f8fafc'};
+                    const isRevisit = stats.revisitNames.has(r.name) || (r.phone && r.phone !== '010' && stats.revisitPhones.has(r.phone));
+                    const checkout = addDays(r.date, r.nights||1);
+                    const daysUntil = Math.ceil((new Date(r.date+'T00:00:00') - new Date(today+'T00:00:00')) / 86400000);
+                    return (
+                      <div key={r.id} className="p-4 rounded-2xl flex items-center gap-3 cursor-pointer transition-all"
+                        style={{background:'white', boxShadow:'0 2px 8px rgba(15,76,92,0.06)', borderLeft:`3px solid ${rc.accent}`}}
+                        onClick={() => {
+                          setFormData({ date:r.date, room:r.room, name:r.name, phone:r.phone||'010',
+                            adults:r.adults||0, kids:r.kids||0, bbq:r.bbq||false,
+                            nights:r.nights||1, memo:r.memo||'', path:r.path||'직접' });
+                          setEditTarget(r.id); setSelectedResId(r.id); setIsManualPrice(false);
+                          setManualPrice(''); setManualPriceMode('total'); setRoomTouched(true); setIsModalOpen(true);
+                        }}>
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0"
+                          style={{background:rc.bg, color:rc.accent}}>{r.room[0]}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-sm" style={{color:'#0f4c5c'}}>{r.name}님</span>
+                            {isRevisit && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={{background:'#fef3c7',color:'#d97706'}}><Repeat2 size={8}/>재방문</span>}
+                            {r.bbq && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full" style={{background:'#fff7ed',color:'#f97316'}}>🔥BBQ</span>}
+                          </div>
+                          <div className="text-[10px] font-bold mt-0.5" style={{color:'#94a3b8'}}>
+                            {r.date} ~ {checkout} · {r.nights}박 · {r.path||'-'}
+                          </div>
+                          {r.memo && <div className="text-[10px] font-bold mt-0.5" style={{color:'#d97706'}}>📝 {r.memo}</div>}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="font-black text-sm" style={{color:'#0f4c5c'}}>₩{(Number(r.price)||0).toLocaleString()}</div>
+                          <div className="text-[10px] font-black mt-0.5" style={{color: daysUntil===0?'#f43f5e': daysUntil<=3?'#f97316':'#0d9488'}}>
+                            {daysUntil===0 ? '오늘 입실' : `${daysUntil}일 후`}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {past.length > 0 && (
+                  <>
+                    <h3 className="text-sm font-black pt-2" style={{color:'#94a3b8'}}>최근 완료 (10건)</h3>
+                    <div className="space-y-2">
+                      {past.map(r => {
+                        const rc = {Shell:{accent:'#f43f5e',bg:'#fff1f2'},Beach:{accent:'#0ea5e9',bg:'#f0f9ff'},Pine:{accent:'#22c55e',bg:'#f0fdf4'}}[r.room]||{accent:'#94a3b8',bg:'#f8fafc'};
+                        const isRevisit = stats.revisitNames.has(r.name) || (r.phone && r.phone !== '010' && stats.revisitPhones.has(r.phone));
+                        return (
+                          <div key={r.id} className="p-4 rounded-2xl flex items-center gap-3 opacity-60"
+                            style={{background:'white', boxShadow:'0 1px 4px rgba(15,76,92,0.04)', borderLeft:`3px solid #e2e8f0`}}>
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0"
+                              style={{background:rc.bg, color:rc.accent}}>{r.room[0]}</div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-sm" style={{color:'#334155'}}>{r.name}님</span>
+                                {isRevisit && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={{background:'#fef3c7',color:'#d97706'}}><Repeat2 size={8}/>재방문</span>}
+                              </div>
+                              <div className="text-[10px] font-bold" style={{color:'#94a3b8'}}>{r.date} · {r.nights}박</div>
+                            </div>
+                            <div className="font-black text-sm" style={{color:'#94a3b8'}}>₩{(Number(r.price)||0).toLocaleString()}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
             <div className="max-w-3xl mx-auto space-y-6">
               <div className="p-6 md:p-10 rounded-2xl" style={{background:'white', boxShadow:'0 4px 24px rgba(15,76,92,0.1)'}}>
                 <h2 className="text-2xl font-black mb-8 pb-5 flex items-center gap-3" style={{color:'#0f4c5c', borderBottom:'2px solid #f0fdfa'}}>
@@ -1319,6 +1496,39 @@ export default function App() {
                   <div className="absolute -right-4 -top-4 opacity-5"><Users size={100} /></div>
                   <p className="font-bold text-xs" style={{color:'#94a3b8'}}>총 예약 건수</p>
                   <p className="text-3xl font-black mt-2" style={{color:'#0f4c5c'}}>{stats.count}건</p>
+                </div>
+              </div>
+
+              {/* 객실 평균단가 + 재방문 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-5 rounded-2xl" style={{background:'white', boxShadow:'0 4px 16px rgba(15,76,92,0.08)'}}>
+                  <h4 className="font-black text-sm mb-3 flex items-center gap-2" style={{color:'#0f4c5c'}}>
+                    <TrendingUp size={14} style={{color:'#0d9488'}}/> 객실별 평균 1박 단가
+                  </h4>
+                  {[{id:'Shell',color:'#f43f5e',bg:'#fff1f2'},{id:'Beach',color:'#0ea5e9',bg:'#f0f9ff'},{id:'Pine',color:'#22c55e',bg:'#f0fdf4'}].map(r => (
+                    <div key={r.id} className="flex items-center justify-between py-2" style={{borderBottom:'1px solid #f8fafc'}}>
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{background:r.bg, color:r.color}}>{r.id}</span>
+                      <span className="font-black text-sm" style={{color:'#0f4c5c'}}>
+                        {stats.avgPrice[r.id] > 0 ? `₩${stats.avgPrice[r.id].toLocaleString()}` : '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-5 rounded-2xl" style={{background:'white', boxShadow:'0 4px 16px rgba(15,76,92,0.08)'}}>
+                  <h4 className="font-black text-sm mb-3 flex items-center gap-2" style={{color:'#0f4c5c'}}>
+                    <Repeat2 size={14} style={{color:'#f97316'}}/> 재방문 고객
+                  </h4>
+                  {stats.revisitNames.size === 0 ? (
+                    <p className="text-xs font-bold" style={{color:'#94a3b8'}}>재방문 기록 없음</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {[...stats.revisitNames].map(name => (
+                        <span key={name} className="text-xs font-black px-2.5 py-1 rounded-full" style={{background:'#fef3c7', color:'#d97706'}}>
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1577,6 +1787,34 @@ export default function App() {
             </div>
 
             <div className="pt-6" style={{borderTop:'2px solid #f0fdfa'}}>
+              {/* 객실 블락 */}
+              <div className="mb-5">
+                <p className="text-[10px] font-black mb-2 flex items-center gap-1" style={{color:'#94a3b8'}}>
+                  <Ban size={10}/> 객실 마감 설정
+                </p>
+                <div className="flex gap-2">
+                  {['Shell','Beach','Pine'].map(roomId => {
+                    const isBooked = (reservationMap[formData.date]||[]).some(r => r.room === roomId);
+                    const isBlocked = blockDates[formData.date]?.[roomId];
+                    const rc = {Shell:{accent:'#f43f5e',bg:'#fff1f2'},Beach:{accent:'#0ea5e9',bg:'#f0f9ff'},Pine:{accent:'#22c55e',bg:'#f0fdf4'}}[roomId];
+                    return (
+                      <button key={roomId} type="button"
+                        disabled={isBooked}
+                        onClick={() => toggleBlockRoom(formData.date, roomId)}
+                        className="flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1"
+                        style={{
+                          opacity: isBooked ? 0.4 : 1,
+                          background: isBlocked ? '#64748b' : rc.bg,
+                          color: isBlocked ? 'white' : rc.accent,
+                          border: `1.5px solid ${isBlocked ? '#64748b' : rc.accent}`
+                        }}>
+                        <Ban size={10}/> {roomId}
+                        {isBlocked ? ' 마감' : isBooked ? ' 예약됨' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <h4 className="font-black text-md mb-5 flex items-center gap-2" style={{color:'#0d9488'}}>
                 <PlusCircle size={18} /> {selectedResId ? "예약 수정 (클릭해제 시 신규등록)" : "새 예약 등록"}
               </h4>
