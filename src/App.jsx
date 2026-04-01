@@ -308,49 +308,48 @@ function SettingsTab({ rateConfig, onSave }) {
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-          <Settings size={22} className="text-blue-600" /> 요금 설정
+        <h2 className="text-2xl font-black flex items-center gap-2" style={{color:'#0f4c5c'}}>
+          <Settings size={22} style={{color:'#0d9488'}} /> 요금 설정
         </h2>
         {dirty && (
           <button onClick={() => { onSave(cfg); setDirty(false); }}
-            className="px-6 py-2.5 bg-blue-600 text-white font-black rounded-xl shadow-lg hover:bg-blue-500 transition-all text-sm">
+            className="px-6 py-2.5 font-black rounded-xl text-sm text-white"
+            style={{background:'linear-gradient(135deg,#0d9488,#0f4c5c)', boxShadow:'0 4px 16px rgba(13,148,136,0.3)'}}>
             저장
           </button>
         )}
       </div>
 
-      {/* 시즌 설정 */}
       {cfg.seasons.map((s, idx) => (
-        <div key={s.id} className="bg-white p-6 rounded-[1.5rem] border border-slate-200 shadow-sm space-y-4">
+        <div key={s.id} className="p-6 rounded-2xl space-y-4" style={{background:'white', boxShadow:'0 2px 16px rgba(15,76,92,0.08)'}}>
           <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-full text-xs font-black
-              ${s.id==='peak'?'bg-rose-100 text-rose-700':
-                s.id==='pre1'||s.id==='pre2'?'bg-amber-100 text-amber-700':
-                'bg-slate-100 text-slate-600'}`}>{s.label}</span>
+            <span className="px-3 py-1 rounded-full text-xs font-black"
+              style={{
+                background: s.id==='peak' ? '#fff1f2' : s.id==='pre1'||s.id==='pre2' ? '#fffbeb' : '#f0fdfa',
+                color: s.id==='peak' ? '#f43f5e' : s.id==='pre1'||s.id==='pre2' ? '#d97706' : '#0d9488'
+              }}>{s.label}</span>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col">
-              <label className="text-[10px] font-bold text-slate-400 mb-1">시작 (MM-DD)</label>
-              <input value={s.start} onChange={e => updateSeason(idx,'start',e.target.value)}
-                placeholder="MM-DD" maxLength={5}
-                className="p-2.5 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
-            </div>
-            <div className="flex flex-col">
-              <label className="text-[10px] font-bold text-slate-400 mb-1">종료 (MM-DD)</label>
-              <input value={s.end} onChange={e => updateSeason(idx,'end',e.target.value)}
-                placeholder="MM-DD" maxLength={5}
-                className="p-2.5 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
-            </div>
+            {['start','end'].map(field => (
+              <div key={field} className="flex flex-col">
+                <label className="text-[10px] font-bold mb-1" style={{color:'#94a3b8'}}>{field==='start'?'시작':'종료'} (MM-DD)</label>
+                <input value={s[field]} onChange={e => updateSeason(idx,field,e.target.value)}
+                  placeholder="MM-DD" maxLength={5}
+                  className="p-2.5 rounded-xl font-bold text-sm outline-none"
+                  style={{background:'#f0fdfa', color:'#0f4c5c'}} />
+              </div>
+            ))}
           </div>
           {s.weekendSame ? (
             <div>
-              <label className="text-[10px] font-bold text-slate-400 mb-2 block">단가 (평일=주말)</label>
+              <label className="text-[10px] font-bold mb-2 block" style={{color:'#94a3b8'}}>단가 (평일=주말)</label>
               <div className="grid grid-cols-3 gap-2">
                 {['Shell','Beach','Pine'].map(r => (
                   <div key={r} className="flex flex-col">
-                    <label className="text-[10px] font-bold text-slate-500 mb-1">{r}</label>
+                    <label className="text-[10px] font-bold mb-1" style={{color:'#64748b'}}>{r}</label>
                     <input type="number" value={s[r]} onChange={e => updateSeason(idx,r,e.target.value)}
-                      className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
+                      className="p-2 rounded-xl font-bold text-sm text-center outline-none"
+                      style={{background:'#f0fdfa', color:'#0f4c5c'}} />
                   </div>
                 ))}
               </div>
@@ -359,24 +358,23 @@ function SettingsTab({ rateConfig, onSave }) {
             <div className="space-y-2">
               {['Shell','Beach','Pine'].map(r => (
                 <div key={r}>
-                  <label className="text-[10px] font-bold text-slate-500 mb-1 block">{r}</label>
+                  <label className="text-[10px] font-bold mb-1 block" style={{color:'#64748b'}}>{r}</label>
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="flex flex-col">
-                      <label className="text-[10px] text-slate-400 mb-1">평일</label>
-                      <input type="number" value={s[r+'_w']} onChange={e => updateSeason(idx, r+'_w', e.target.value)}
-                        className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
-                    </div>
-                    <div className="flex flex-col">
-                      <label className="text-[10px] text-slate-400 mb-1">주말</label>
-                      <input type="number" value={s[r+'_wk']} onChange={e => updateSeason(idx, r+'_wk', e.target.value)}
-                        className="p-2 bg-slate-50 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-blue-500" />
-                    </div>
+                    {['_w','_wk'].map(suffix => (
+                      <div key={suffix} className="flex flex-col">
+                        <label className="text-[10px] mb-1" style={{color:'#94a3b8'}}>{suffix==='_w'?'평일':'주말'}</label>
+                        <input type="number" value={s[r+suffix]} onChange={e => updateSeason(idx, r+suffix, e.target.value)}
+                          className="p-2 rounded-xl font-bold text-sm text-center outline-none"
+                          style={{background:'#f0fdfa', color:'#0f4c5c'}} />
+                      </div>
+                    ))}
                   </div>
                   {s.beachFriSpecial !== undefined && r === 'Beach' && (
                     <div className="mt-1 flex flex-col">
-                      <label className="text-[10px] text-amber-600 mb-1">Beach 금요일 특가</label>
+                      <label className="text-[10px] mb-1" style={{color:'#d97706'}}>Beach 금요일 특가</label>
                       <input type="number" value={s.beachFriSpecial} onChange={e => updateSeason(idx,'beachFriSpecial',e.target.value)}
-                        className="p-2 bg-amber-50 border border-amber-200 rounded-xl font-bold text-sm text-center outline-none focus:ring-2 ring-amber-400" />
+                        className="p-2 rounded-xl font-bold text-sm text-center outline-none"
+                        style={{background:'#fffbeb', border:'1px solid #fcd34d', color:'#92400e'}} />
                     </div>
                   )}
                 </div>
@@ -386,33 +384,30 @@ function SettingsTab({ rateConfig, onSave }) {
         </div>
       ))}
 
-      {/* 공휴일 관리 — 자동갱신 안내 + 수동 추가만 */}
-      <div className="bg-white p-6 rounded-[1.5rem] border border-slate-200 shadow-sm space-y-4">
-        <h3 className="font-black text-slate-800">공휴일 목록</h3>
-
-        <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl">
-          <p className="text-xs font-black text-blue-700">자동 갱신 활성화됨</p>
-          <p className="text-[11px] text-blue-500 mt-1">
-            공공데이터포털 API 기반 · 앱 로드 시 24시간 주기로 당해·내년도 자동 갱신
-          </p>
+      <div className="p-6 rounded-2xl space-y-4" style={{background:'white', boxShadow:'0 2px 16px rgba(15,76,92,0.08)'}}>
+        <h3 className="font-black" style={{color:'#0f4c5c'}}>공휴일 목록</h3>
+        <div className="p-4 rounded-2xl" style={{background:'#f0fdfa', border:'1px solid #99f6e4'}}>
+          <p className="text-xs font-black" style={{color:'#0d9488'}}>자동 갱신 활성화됨</p>
+          <p className="text-[11px] mt-1" style={{color:'#5eead4'}}>공공데이터포털 API 기반 · 앱 로드 시 24시간 주기로 당해·내년도 자동 갱신</p>
         </div>
-
         <div className="flex gap-2">
           <input value={holidayInput} onChange={e => setHolidayInput(e.target.value)}
             onKeyDown={e => e.key==='Enter' && addHoliday()}
             placeholder="YYYY-MM-DD 임시공휴일 수동 추가" maxLength={10}
-            className="flex-1 p-3 bg-slate-50 rounded-xl font-bold text-sm outline-none focus:ring-2 ring-blue-500" />
+            className="flex-1 p-3 rounded-xl font-bold text-sm outline-none"
+            style={{background:'#f0fdfa', color:'#0f4c5c'}} />
           <button onClick={addHoliday}
-            className="px-4 py-3 bg-slate-700 text-white font-black rounded-xl text-sm hover:bg-slate-600 transition-all">
+            className="px-4 py-3 font-black rounded-xl text-sm text-white"
+            style={{background:'#0f4c5c'}}>
             추가
           </button>
         </div>
-
         <div className="flex flex-wrap gap-2 max-h-52 overflow-y-auto">
           {cfg.holidays.map(h => (
-            <span key={h} className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-700">
+            <span key={h} className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold"
+              style={{background:'#f0fdfa', color:'#0f4c5c'}}>
               {h}
-              <button onClick={() => removeHoliday(h)} className="text-rose-400 hover:text-rose-600 ml-1">×</button>
+              <button onClick={() => removeHoliday(h)} className="ml-1" style={{color:'#f43f5e'}}>×</button>
             </span>
           ))}
         </div>
@@ -420,7 +415,8 @@ function SettingsTab({ rateConfig, onSave }) {
 
       {dirty && (
         <button onClick={() => { onSave(cfg); setDirty(false); }}
-          className="w-full py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg hover:bg-blue-500 transition-all">
+          className="w-full py-4 font-black rounded-2xl text-white"
+          style={{background:'linear-gradient(135deg,#0d9488,#0f4c5c)', boxShadow:'0 4px 16px rgba(13,148,136,0.3)'}}>
           변경사항 저장
         </button>
       )}
@@ -651,138 +647,147 @@ export default function App() {
 
   const renderForm = (isModal=false) => (
     <form onSubmit={handleSave} className="space-y-4">
+      {/* 방 선택 */}
       <div className="grid grid-cols-3 gap-2">
         {ROOMS.map(r => {
           const full = isRoomFull(r.id, formData.date, editTarget);
+          const rc = {Shell:{accent:'#f43f5e',bg:'#fff1f2',border:'#fecdd3'}, Beach:{accent:'#0ea5e9',bg:'#f0f9ff',border:'#bae6fd'}, Pine:{accent:'#22c55e',bg:'#f0fdf4',border:'#bbf7d0'}}[r.id];
+          const isActive = formData.room === r.id;
           return (
             <button key={r.id} type="button" disabled={full}
               onClick={() => { setFormData({ ...formData, room:r.id }); setRoomTouched(true); }}
-              className={`p-3 rounded-xl font-black border-2 transition-all flex flex-col items-center
-                ${full ? 'bg-slate-50 border-slate-100 text-slate-300 opacity-50' :
-                  formData.room===r.id ? 'bg-blue-600 text-white border-blue-600 shadow-md' :
-                  'bg-white border-slate-100 text-slate-500 hover:border-blue-200'}`}>
+              className="p-3 rounded-xl font-black border-2 transition-all flex flex-col items-center"
+              style={{
+                opacity: full ? 0.4 : 1,
+                background: isActive ? rc.accent : rc.bg,
+                borderColor: isActive ? rc.accent : rc.border,
+                color: isActive ? 'white' : rc.accent,
+                boxShadow: isActive ? `0 4px 16px ${rc.accent}40` : 'none'
+              }}>
               <span className="text-xs md:text-sm">{r.name}</span>
-              {full && <span className="text-[10px] text-rose-400 font-bold mt-1">예약 마감</span>}
+              {full && <span className="text-[10px] font-bold mt-1" style={{color:'#f43f5e'}}>예약 마감</span>}
             </button>
           );
         })}
       </div>
 
+      {/* 기본 정보 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {!isModal && (
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">체크인 날짜</label>
+            <label className="text-[10px] font-bold ml-1 mb-1" style={{color:'#94a3b8'}}>체크인 날짜</label>
             <input type="date" value={formData.date}
               onChange={e => setFormData({ ...formData, date:e.target.value })}
-              className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm" required />
+              className="p-3 rounded-xl font-bold border-none outline-none text-sm"
+              style={{background:'#f0fdfa', color:'#0f4c5c'}} required />
           </div>
         )}
         <div className="flex flex-col">
-          <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">숙박 일수</label>
+          <label className="text-[10px] font-bold ml-1 mb-1" style={{color:'#94a3b8'}}>숙박 일수</label>
           <select value={formData.nights}
             onChange={e => setFormData({ ...formData, nights:Number(e.target.value) })}
-            className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm">
+            className="p-3 rounded-xl font-bold border-none outline-none text-sm"
+            style={{background:'#f0fdfa', color:'#0f4c5c'}}>
             {[1,2,3,4,5,6,7].map(n => <option key={n} value={n}>{n}박</option>)}
           </select>
         </div>
         <div className="flex flex-col">
-          <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">성함</label>
+          <label className="text-[10px] font-bold ml-1 mb-1" style={{color:'#94a3b8'}}>성함</label>
           <input type="text" placeholder="예약자명" value={formData.name}
             onChange={e => setFormData({ ...formData, name:e.target.value })}
-            className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm" required />
+            className="p-3 rounded-xl font-bold border-none outline-none text-sm"
+            style={{background:'#f0fdfa', color:'#0f4c5c'}} required />
         </div>
         <div className="flex flex-col">
-          <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">연락처</label>
+          <label className="text-[10px] font-bold ml-1 mb-1" style={{color:'#94a3b8'}}>연락처</label>
           <input type="tel" placeholder="010-0000-0000" value={formatPhone(formData.phone)}
             onChange={handlePhoneChange}
-            className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm" />
+            className="p-3 rounded-xl font-bold border-none outline-none text-sm"
+            style={{background:'#f0fdfa', color:'#0f4c5c'}} />
         </div>
         <div className="flex flex-col">
-          <label className="text-[10px] font-bold text-slate-400 ml-1 mb-1">예약 경로</label>
+          <label className="text-[10px] font-bold ml-1 mb-1" style={{color:'#94a3b8'}}>예약 경로</label>
           <select value={formData.path}
             onChange={e => setFormData({ ...formData, path:e.target.value })}
-            className="p-3 bg-slate-50 rounded-xl font-bold border-none outline-none focus:ring-2 ring-blue-500 text-sm">
+            className="p-3 rounded-xl font-bold border-none outline-none text-sm"
+            style={{background:'#f0fdfa', color:'#0f4c5c'}}>
             {PATHS.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
       </div>
 
-      <div className="bg-slate-50 p-4 rounded-2xl space-y-3">
+      {/* 추가요금 */}
+      <div className="p-4 rounded-2xl space-y-3" style={{background:'#f0fdfa'}}>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-slate-500 mb-1 ml-1">성인(8세~, 2만)</label>
+            <label className="text-[10px] font-bold mb-1 ml-1" style={{color:'#0d9488'}}>성인(8세~, 2만)</label>
             <input type="number" min="0" value={formData.adults}
               onChange={e => setFormData({ ...formData, adults:Number(e.target.value) })}
-              className="p-2.5 rounded-xl border-none font-bold text-center text-sm" />
+              className="p-2.5 rounded-xl border-none font-bold text-center text-sm"
+              style={{background:'white', color:'#0f4c5c'}} />
           </div>
           <div className="flex flex-col">
-            <label className="text-[10px] font-bold text-slate-500 mb-1 ml-1">아동(~7세, 1.5만)</label>
+            <label className="text-[10px] font-bold mb-1 ml-1" style={{color:'#0d9488'}}>아동(~7세, 1.5만)</label>
             <input type="number" min="0" value={formData.kids}
               onChange={e => setFormData({ ...formData, kids:Number(e.target.value) })}
-              className="p-2.5 rounded-xl border-none font-bold text-center text-sm" />
+              className="p-2.5 rounded-xl border-none font-bold text-center text-sm"
+              style={{background:'white', color:'#0f4c5c'}} />
           </div>
         </div>
         <button type="button" onClick={() => setFormData({ ...formData, bbq:!formData.bbq })}
-          className={`w-full p-2.5 rounded-xl font-bold border-2 text-xs transition-all
-            ${formData.bbq ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-400 border-slate-100'}`}>
-          바베큐 그릴 (30,000원) {formData.bbq ? '신청완료' : '미신청'}
+          className="w-full p-2.5 rounded-xl font-bold border-2 text-xs transition-all"
+          style={{
+            background: formData.bbq ? '#f97316' : 'white',
+            borderColor: formData.bbq ? '#f97316' : '#fed7aa',
+            color: formData.bbq ? 'white' : '#f97316'
+          }}>
+          🔥 바베큐 그릴 (30,000원) {formData.bbq ? '신청완료' : '미신청'}
         </button>
       </div>
 
+      {/* 요금 영역 */}
       <div className="space-y-2">
         {roomTouched && (
           <div className="px-1 flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400">
+            <span className="text-xs font-bold" style={{color:'#94a3b8'}}>
               {isManualPrice ? '직접입력 요금' : '예정 요금'}
             </span>
-            <span className="text-base font-black text-slate-800">
+            <span className="text-base font-black" style={{color:'#0f4c5c'}}>
               ₩{(isManualPrice ? finalManualPrice : autoTotalPrice).toLocaleString()}
             </span>
           </div>
         )}
 
         {isManualPrice && (
-          <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl space-y-3">
-            <div className="flex gap-1 bg-amber-100 rounded-xl p-1">
+          <div className="p-4 rounded-2xl space-y-3" style={{background:'#fffbeb', border:'2px solid #fcd34d'}}>
+            <div className="flex gap-1 p-1 rounded-xl" style={{background:'#fef3c7'}}>
               <button type="button"
                 onClick={() => { setManualPriceMode('total'); setManualPrice(''); }}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all
-                  ${manualPriceMode==='total' ? 'bg-white text-amber-700 shadow' : 'text-amber-500'}`}>
+                className="flex-1 py-1.5 rounded-lg text-xs font-black transition-all"
+                style={{background: manualPriceMode==='total' ? 'white' : 'transparent', color: manualPriceMode==='total' ? '#92400e' : '#d97706', boxShadow: manualPriceMode==='total' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none'}}>
                 합계 입력
               </button>
               <button type="button"
                 onClick={() => { setManualPriceMode('pernight'); setManualPrice(''); }}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all
-                  ${manualPriceMode==='pernight' ? 'bg-white text-amber-700 shadow' : 'text-amber-500'}`}>
+                className="flex-1 py-1.5 rounded-lg text-xs font-black transition-all"
+                style={{background: manualPriceMode==='pernight' ? 'white' : 'transparent', color: manualPriceMode==='pernight' ? '#92400e' : '#d97706', boxShadow: manualPriceMode==='pernight' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none'}}>
                 1박 단가 입력
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <input
-                type="number"
-                value={manualPrice}
-                onChange={e => setManualPrice(e.target.value)}
-                placeholder={manualPriceMode==='total'
-                  ? `합계 금액 (${formData.nights}박 전체)`
-                  : '1박 단가'}
-                className="flex-1 bg-white border-2 border-amber-300 rounded-xl p-3 outline-none font-black text-amber-900 text-base placeholder-amber-300"
-              />
-              <span className="text-xs font-bold text-amber-600 shrink-0">원</span>
+              <input type="number" value={manualPrice} onChange={e => setManualPrice(e.target.value)}
+                placeholder={manualPriceMode==='total' ? `합계 금액 (${formData.nights}박 전체)` : '1박 단가'}
+                className="flex-1 p-3 rounded-xl outline-none font-black text-base"
+                style={{background:'white', border:'2px solid #fcd34d', color:'#92400e'}} />
+              <span className="text-xs font-bold shrink-0" style={{color:'#d97706'}}>원</span>
             </div>
             {manualPrice && Number(manualPrice) > 0 && (
-              <div className="text-[11px] font-bold text-amber-700 bg-amber-100 px-3 py-2 rounded-xl leading-relaxed">
+              <div className="text-[11px] font-bold px-3 py-2 rounded-xl leading-relaxed" style={{background:'#fef3c7', color:'#92400e'}}>
                 {manualPriceMode === 'total' ? (
-                  formData.nights > 1 ? (
-                    <>₩{Number(manualPrice).toLocaleString()} ÷ {formData.nights}박 → 1박 ₩{Math.round(Number(manualPrice)/formData.nights).toLocaleString()}으로 저장</>
-                  ) : (
-                    <>저장: ₩{Number(manualPrice).toLocaleString()}</>
-                  )
+                  formData.nights > 1 ? <>₩{Number(manualPrice).toLocaleString()} ÷ {formData.nights}박 → 1박 ₩{Math.round(Number(manualPrice)/formData.nights).toLocaleString()}으로 저장</>
+                  : <>저장: ₩{Number(manualPrice).toLocaleString()}</>
                 ) : (
-                  <>
-                    1박 ₩{Number(manualPrice).toLocaleString()} × {formData.nights}박
-                    {extraPrice > 0 && <> + 추가요금 ₩{extraPrice.toLocaleString()}</>}
-                    {' '}= 저장: ₩{finalManualPrice.toLocaleString()}
-                  </>
+                  <>1박 ₩{Number(manualPrice).toLocaleString()} × {formData.nights}박{extraPrice > 0 && <> + 추가요금 ₩{extraPrice.toLocaleString()}</>} = 저장: ₩{finalManualPrice.toLocaleString()}</>
                 )}
               </div>
             )}
@@ -791,12 +796,17 @@ export default function App() {
 
         <div className="flex gap-2">
           <button type="button" onClick={toggleManualPrice}
-            className={`flex-1 py-3 rounded-xl font-bold text-xs transition-all border
-              ${isManualPrice ? 'bg-amber-500 border-amber-400 text-white' : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'}`}>
+            className="flex-1 py-3 rounded-xl font-bold text-xs transition-all border"
+            style={{
+              background: isManualPrice ? '#f97316' : '#f8fafc',
+              borderColor: isManualPrice ? '#f97316' : '#e2e8f0',
+              color: isManualPrice ? 'white' : '#64748b'
+            }}>
             {isManualPrice ? '✏️ 직접입력 중' : '가격 직접입력'}
           </button>
           <button type="submit"
-            className="flex-1 py-3 bg-blue-600 rounded-xl font-black text-sm text-white hover:bg-blue-500 transition-all shadow-lg">
+            className="flex-1 py-3 rounded-xl font-black text-sm text-white transition-all"
+            style={{background:'linear-gradient(135deg,#0d9488,#0f4c5c)', boxShadow:'0 4px 16px rgba(13,148,136,0.3)'}}>
             {editTarget ? "수정 완료" : "예약 저장"}
           </button>
         </div>
@@ -805,20 +815,31 @@ export default function App() {
   );
 
   if (!isUnlocked) return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-white p-10 rounded-[2.5rem] shadow-2xl text-center">
-        <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 mx-auto mb-6">
-          <Lock size={32} />
+    <div className="min-h-screen flex items-center justify-center p-4"
+      style={{background:'linear-gradient(135deg, #0f4c5c 0%, #0d9488 50%, #f97316 100%)'}}>
+      <div className="w-full max-w-sm p-10 rounded-[2.5rem] text-center"
+        style={{background:'rgba(255,251,245,0.97)', boxShadow:'0 32px 80px rgba(0,0,0,0.25)'}}>
+        <div className="w-20 h-20 rounded-[1.5rem] flex items-center justify-center mx-auto mb-6"
+          style={{background:'linear-gradient(135deg,#0d9488,#0f4c5c)'}}>
+          <BedDouble size={36} color="white" />
         </div>
-        <h1 className="text-xl font-black text-slate-800 mb-6 tracking-tighter uppercase">Shell Beach Admin</h1>
+        <h1 className="text-2xl font-black mb-1 tracking-tight" style={{color:'#0f4c5c'}}>Shell Beach</h1>
+        <p className="text-xs font-bold mb-8 tracking-widest uppercase" style={{color:'#0d9488'}}>Admin Console</p>
         <form onSubmit={handleLogin} className="space-y-4">
           <input type="password" maxLength={4} value={pinInput}
             onChange={e => setPinInput(e.target.value)}
-            className={`w-full p-4 text-center text-3xl font-black bg-slate-50 border-2 rounded-2xl outline-none
-              ${pinError ? 'border-rose-400' : 'border-slate-100'}`}
-            placeholder="PIN" autoFocus />
-          {pinError && <p className="text-rose-500 text-xs font-bold">PIN이 올바르지 않습니다</p>}
-          <button type="submit" className="w-full p-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg">시스템 접속</button>
+            className="w-full p-4 text-center text-3xl font-black rounded-2xl outline-none transition-all"
+            style={{
+              background: pinError ? '#fff1f2' : '#f0fdfa',
+              border: `2px solid ${pinError ? '#f43f5e' : '#99f6e4'}`,
+              color:'#0f4c5c', letterSpacing:'0.5em'
+            }}
+            placeholder="·  ·  ·  ·" autoFocus />
+          {pinError && <p className="text-xs font-bold" style={{color:'#f43f5e'}}>PIN이 올바르지 않습니다</p>}
+          <button type="submit" className="w-full p-4 font-black rounded-2xl text-white transition-all"
+            style={{background:'linear-gradient(135deg,#0d9488,#0f4c5c)', boxShadow:'0 8px 24px rgba(13,148,136,0.4)'}}>
+            접속
+          </button>
         </form>
       </div>
     </div>
@@ -833,40 +854,59 @@ export default function App() {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-slate-50 font-sans">
+    <div className="flex flex-col md:flex-row h-screen font-sans" style={{background:'#FBF8F3'}}>
       {message && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[1000] px-6 py-2.5 rounded-full shadow-2xl font-bold
-          ${message.type==='success' ? 'bg-slate-900 text-white' : 'bg-rose-600 text-white'}`}>
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[1000] px-6 py-2.5 rounded-full shadow-2xl font-bold text-sm`}
+          style={{
+            background: message.type==='success' ? 'linear-gradient(135deg,#0d9488,#0f4c5c)' : '#f43f5e',
+            color:'white', boxShadow:'0 8px 32px rgba(0,0,0,0.2)'
+          }}>
           {message.text}
         </div>
       )}
       {exitConfirm && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1000] px-6 py-2.5 rounded-full shadow-2xl font-bold bg-amber-500 text-white">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[1000] px-6 py-2.5 rounded-full shadow-2xl font-bold text-sm text-white"
+          style={{background:'#f97316'}}>
           종료하시겠습니까? 한 번 더 누르면 종료됩니다
         </div>
       )}
 
-      <nav className="hidden md:flex w-60 border-r border-slate-200 flex-col p-5 space-y-2 bg-white shadow-xl z-20 shrink-0">
-        <div className="p-6 bg-blue-600 text-white rounded-[1.5rem] mb-4 shadow-xl">
-          <BedDouble size={24} className="mb-3" />
-          <h1 className="font-black text-lg uppercase tracking-tighter leading-none">Shell<br />Beach</h1>
-          <div className="mt-3 text-[10px] bg-white/20 p-2 rounded-lg font-bold flex items-center gap-1.5">
+      {/* 사이드바 */}
+      <nav className="hidden md:flex w-64 flex-col p-5 space-y-1.5 shrink-0"
+        style={{background:'linear-gradient(180deg,#0f4c5c 0%,#0d9488 100%)', boxShadow:'4px 0 24px rgba(15,76,92,0.15)'}}>
+        <div className="p-5 rounded-2xl mb-3" style={{background:'rgba(255,255,255,0.1)'}}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{background:'rgba(255,255,255,0.2)'}}>
+              <BedDouble size={20} color="white" />
+            </div>
+            <div>
+              <h1 className="font-black text-white text-base tracking-tight leading-none">Shell Beach</h1>
+              <p className="text-[10px] font-bold tracking-widest uppercase mt-0.5" style={{color:'rgba(255,255,255,0.6)'}}>Admin</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-lg" style={{background:'rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.8)'}}>
             <Check size={10} /> 실시간 동기화 중
           </div>
         </div>
         {NAV_ITEMS.map(item => (
           <button key={item.id} onClick={() => setActiveTab(item.id)}
-            className={`flex items-center gap-3 p-3.5 rounded-xl font-bold transition-all
-              ${activeTab===item.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-100'}`}>
+            className="flex items-center gap-3 p-3.5 rounded-xl font-bold transition-all text-left"
+            style={{
+              background: activeTab===item.id ? 'rgba(255,255,255,0.2)' : 'transparent',
+              color: activeTab===item.id ? 'white' : 'rgba(255,255,255,0.6)',
+              boxShadow: activeTab===item.id ? '0 4px 16px rgba(0,0,0,0.1)' : 'none'
+            }}>
             <item.icon size={18} />
             <span className="text-sm">{item.label}</span>
           </button>
         ))}
       </nav>
 
-      <main className="flex-1 overflow-auto relative bg-slate-50 pb-20 md:pb-0">
+      {/* 메인 */}
+      <main className="flex-1 overflow-auto relative pb-20 md:pb-0">
         {loading && (
-          <div className="absolute inset-0 z-50 bg-white/60 backdrop-blur-sm flex items-center justify-center font-black text-slate-400 text-sm tracking-widest uppercase">
+          <div className="absolute inset-0 z-50 flex items-center justify-center font-black text-sm tracking-widest uppercase"
+            style={{background:'rgba(251,248,243,0.8)', backdropFilter:'blur(8px)', color:'#0d9488'}}>
             Syncing...
           </div>
         )}
@@ -874,30 +914,37 @@ export default function App() {
 
           {activeTab==='calendar' && (
             <div className="space-y-4">
-              <header className="flex flex-col md:flex-row justify-between items-center bg-white p-4 md:p-5 rounded-[1.5rem] shadow-sm border border-slate-200">
+              <header className="flex flex-col md:flex-row justify-between items-center p-4 md:p-5 rounded-2xl"
+                style={{background:'white', boxShadow:'0 2px 16px rgba(15,76,92,0.08)', border:'1px solid rgba(15,76,92,0.08)'}}>
                 <div className="flex items-center gap-3">
-                  <div className="bg-blue-50 p-2.5 rounded-xl text-blue-600"><Calendar size={20} /></div>
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{background:'linear-gradient(135deg,#0d9488,#0f4c5c)'}}>
+                    <Calendar size={20} color="white" />
+                  </div>
                   <div>
-                    <h2 className="text-xl font-black text-slate-800">{viewDate.getFullYear()}년 {viewDate.getMonth()+1}월</h2>
-                    <p className="text-sm font-black text-blue-600 mt-0.5">
+                    <h2 className="text-xl font-black tracking-tight" style={{color:'#0f4c5c'}}>{viewDate.getFullYear()}년 {viewDate.getMonth()+1}월</h2>
+                    <p className="text-sm font-black mt-0.5" style={{color:'#0d9488'}}>
                       ₩{(stats.monthlyMap[`${viewDate.getFullYear()}-${String(viewDate.getMonth()+1).padStart(2,'0')}`]?.total||0).toLocaleString()}
-                      <span className="text-slate-400 font-bold text-xs ml-1">월 매출</span>
+                      <span className="font-bold text-xs ml-1" style={{color:'#94a3b8'}}>월 매출</span>
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-1.5 bg-slate-100 p-1.5 rounded-xl mt-3 md:mt-0">
+                <div className="flex gap-1.5 p-1.5 rounded-xl mt-3 md:mt-0" style={{background:'#f0fdfa'}}>
                   <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()-1,1))}
-                    className="p-1.5 hover:bg-white rounded-lg shadow-sm"><ChevronLeft size={18} /></button>
+                    className="p-1.5 rounded-lg transition-all hover:bg-white" style={{color:'#0d9488'}}><ChevronLeft size={18} /></button>
                   <button onClick={() => setViewDate(new Date())}
-                    className="px-4 font-bold text-[11px] text-blue-600">오늘</button>
+                    className="px-4 font-bold text-[11px] rounded-lg transition-all" style={{color:'#0d9488'}}>오늘</button>
                   <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth()+1,1))}
-                    className="p-1.5 hover:bg-white rounded-lg shadow-sm"><ChevronRight size={18} /></button>
+                    className="p-1.5 rounded-lg transition-all hover:bg-white" style={{color:'#0d9488'}}><ChevronRight size={18} /></button>
                 </div>
               </header>
-              <div className="grid grid-cols-7 bg-white rounded-[1.5rem] shadow-lg overflow-hidden border border-slate-200/60">
+              <div className="grid grid-cols-7 rounded-2xl overflow-hidden" style={{background:'white', boxShadow:'0 4px 24px rgba(15,76,92,0.1)', border:'1px solid rgba(15,76,92,0.08)'}}>
                 {['일','월','화','수','목','금','토'].map((d,i) => (
-                  <div key={d} className={`p-2 text-center text-[10px] font-black border-b border-slate-100
-                    ${i===0?'text-rose-500 bg-rose-50/20':i===6?'text-blue-500 bg-blue-50/20':'text-slate-400 bg-slate-50'}`}>{d}</div>
+                  <div key={d} className="p-2 text-center text-[10px] font-black border-b"
+                    style={{
+                      borderColor:'rgba(15,76,92,0.08)',
+                      color: i===0?'#f43f5e': i===6?'#0d9488':'#94a3b8',
+                      background: i===0?'#fff1f2': i===6?'#f0fdfa':'#fafaf9'
+                    }}>{d}</div>
                 ))}
                 {Array.from({length:42}).map((_,i) => {
                   const firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay();
@@ -909,6 +956,7 @@ export default function App() {
                   const dayRes = dateStr ? (reservationMap[dateStr]||[]) : [];
                   const holidayName = dateStr ? (rateConfig.holidayNames?.[dateStr] || null) : null;
                   const isHoliday = dateStr ? (new Set(rateConfig.holidays||[]).has(dateStr)) : false;
+                  const dow = dateStr ? new Date(dateStr+'T00:00:00').getDay() : -1;
                   return (
                     <div key={i} onClick={() => {
                       if (!dateStr) return;
@@ -917,27 +965,36 @@ export default function App() {
                       setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(false);
                       setIsModalOpen(true);
                     }}
-                      className={`min-h-[80px] md:min-h-[110px] p-1.5 border-r border-b border-slate-100 cursor-pointer hover:bg-blue-50/20 transition-all
-                        ${!dateStr?'bg-slate-50/30': isHoliday ? 'bg-rose-50/40' : 'bg-white'}`}>
+                      className="min-h-[80px] md:min-h-[110px] p-1.5 border-r border-b cursor-pointer transition-all"
+                      style={{
+                        borderColor:'rgba(15,76,92,0.06)',
+                        background: !dateStr ? '#faf9f7' : isHoliday ? '#fff1f2' : 'white'
+                      }}
+                      onMouseEnter={e => { if(dateStr) e.currentTarget.style.background = isHoliday ? '#ffe4e6' : '#f0fdfa'; }}
+                      onMouseLeave={e => { if(dateStr) e.currentTarget.style.background = isHoliday ? '#fff1f2' : 'white'; }}>
                       {dateStr && (
                         <>
-                          <span className={`text-xs font-black
-                            ${new Date(dateStr+'T00:00:00').getDay()===0||isHoliday?'text-rose-500':
-                              new Date(dateStr+'T00:00:00').getDay()===6?'text-blue-500':'text-slate-600'}`}>{day}</span>
+                          <span className="text-xs font-black" style={{color: dow===0||isHoliday ? '#f43f5e' : dow===6 ? '#0d9488' : '#334155'}}>{day}</span>
                           {holidayName && (
-                            <div className="text-[7px] font-black text-rose-500 leading-tight truncate">{holidayName}</div>
+                            <div className="text-[7px] font-black leading-tight truncate" style={{color:'#f43f5e'}}>{holidayName}</div>
                           )}
                           {!holidayName && isHoliday && (
-                            <div className="text-[7px] font-black text-rose-400 leading-tight">공휴일</div>
+                            <div className="text-[7px] font-black leading-tight" style={{color:'#fb7185'}}>공휴일</div>
                           )}
                           <div className="mt-0.5 space-y-0.5">
                             {['Shell','Beach','Pine'].map(roomId => {
                               const r = dayRes.find(x => x.room === roomId);
                               if (!r) return null;
+                              const colors = {
+                                Shell: {bg:'#fff1f2', text:'#be123c', border:'#fecdd3', dot:'#f43f5e'},
+                                Beach: {bg:'#f0f9ff', text:'#0369a1', border:'#bae6fd', dot:'#0ea5e9'},
+                                Pine:  {bg:'#f0fdf4', text:'#15803d', border:'#bbf7d0', dot:'#22c55e'},
+                              };
+                              const c = colors[roomId];
                               return (
-                                <div key={roomId} className={`text-[8px] p-0.5 rounded-md border font-bold truncate flex items-center gap-0.5
-                                  ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-slate-100'}`}>
-                                  <div className={`w-1 h-1 rounded-full shrink-0 ${ROOMS.find(rm=>rm.id===r.room)?.dot||'bg-slate-300'}`}></div>
+                                <div key={roomId} className="text-[8px] p-0.5 rounded-md font-bold truncate flex items-center gap-0.5"
+                                  style={{background:c.bg, color:c.text, border:`1px solid ${c.border}`}}>
+                                  <div className="w-1 h-1 rounded-full shrink-0" style={{background:c.dot}}></div>
                                   <span className="shrink-0 opacity-70">{roomId[0]}</span>
                                   <span className="truncate ml-0.5">{r.name}</span>
                                 </div>
@@ -955,9 +1012,9 @@ export default function App() {
 
           {activeTab==='add' && (
             <div className="max-w-3xl mx-auto space-y-6">
-              <div className="bg-white p-6 md:p-10 rounded-[2rem] shadow-xl border border-slate-200">
-                <h2 className="text-2xl font-black text-slate-800 mb-8 border-b pb-5 flex items-center gap-3">
-                  <PlusCircle className="text-blue-600" /> 신규 예약 등록
+              <div className="p-6 md:p-10 rounded-2xl" style={{background:'white', boxShadow:'0 4px 24px rgba(15,76,92,0.1)'}}>
+                <h2 className="text-2xl font-black mb-8 pb-5 flex items-center gap-3" style={{color:'#0f4c5c', borderBottom:'2px solid #f0fdfa'}}>
+                  <PlusCircle style={{color:'#0d9488'}} /> 신규 예약 등록
                 </h2>
                 {renderForm(false)}
               </div>
@@ -966,49 +1023,63 @@ export default function App() {
 
           {activeTab==='search' && (
             <div className="max-w-3xl mx-auto space-y-5">
-              <h2 className="text-2xl font-black text-slate-800">예약 내역 검색</h2>
+              <h2 className="text-2xl font-black" style={{color:'#0f4c5c'}}>예약 내역 검색</h2>
               <div className="relative">
-                <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                <Search className="absolute left-5 top-1/2 -translate-y-1/2" size={20} style={{color:'#0d9488'}} />
                 <input type="text" placeholder="성함 또는 연락처 입력..."
-                  className="w-full p-5 pl-14 bg-white border border-slate-200 rounded-2xl shadow-sm text-lg font-bold outline-none focus:ring-4 ring-blue-500/10 focus:border-blue-500"
+                  className="w-full p-5 pl-14 text-lg font-bold outline-none rounded-2xl transition-all"
+                  style={{background:'white', border:'2px solid #e2e8f0', color:'#0f4c5c'}}
+                  onFocus={e => e.target.style.borderColor='#0d9488'}
+                  onBlur={e => e.target.style.borderColor='#e2e8f0'}
                   value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               </div>
               <div className="space-y-3">
-                {filteredReservations.length > 0 ? filteredReservations.map(r => (
-                  <div key={r.id} className="bg-white p-5 rounded-[1.5rem] border border-slate-100 flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-sm hover:shadow-md transition-all border-l-4 border-l-blue-500">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg shrink-0
-                        ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-slate-100'}`}>
-                        {r.room?r.room[0]:'?'}
+                {filteredReservations.length > 0 ? filteredReservations.map(r => {
+                  const rc = {Shell:{accent:'#f43f5e',bg:'#fff1f2'}, Beach:{accent:'#0ea5e9',bg:'#f0f9ff'}, Pine:{accent:'#22c55e',bg:'#f0fdf4'}}[r.room]||{accent:'#94a3b8',bg:'#f8fafc'};
+                  return (
+                    <div key={r.id} className="p-5 rounded-2xl flex flex-col md:flex-row justify-between md:items-center gap-4 transition-all"
+                      style={{background:'white', boxShadow:'0 2px 12px rgba(15,76,92,0.06)', borderLeft:`4px solid ${rc.accent}`}}>
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg shrink-0"
+                          style={{background:rc.bg, color:rc.accent}}>
+                          {r.room?r.room[0]:'?'}
+                        </div>
+                        <div>
+                          <p className="text-lg font-black" style={{color:'#0f4c5c'}}>{r.name}님
+                            <span className="text-[11px] font-bold ml-2 px-2 py-0.5 rounded-md uppercase" style={{background:rc.bg, color:rc.accent}}>{r.room}</span>
+                          </p>
+                          <p className="font-bold mt-0.5 text-xs" style={{color:'#94a3b8'}}>{r.date} 입실 · {r.nights}박 · {r.path||'-'}</p>
+                          {r.phone && (
+                            <a href={`tel:${r.phone}`} className="inline-flex items-center gap-1.5 mt-1.5 font-bold hover:underline px-3 py-1 rounded-full text-[11px]"
+                              style={{background:rc.bg, color:rc.accent}}>
+                              <Phone size={11} /> {formatPhone(r.phone)}
+                            </a>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-lg font-black text-slate-800">{r.name}님
-                          <span className="text-[11px] font-bold text-blue-500 ml-2 px-2 py-0.5 bg-blue-50 rounded-md uppercase">{r.room}</span>
-                        </p>
-                        <p className="text-slate-500 font-bold mt-0.5 text-xs">{r.date} 입실 • {r.nights}박 • {r.path||'-'}</p>
-                        {r.phone && (
-                          <a href={`tel:${r.phone}`} className="inline-flex items-center gap-1.5 mt-1.5 text-blue-600 font-bold hover:underline bg-blue-50 px-3 py-1 rounded-full text-[11px]">
-                            <Phone size={11} /> {formatPhone(r.phone)}
-                          </a>
-                        )}
+                      <div className="flex justify-between items-center md:flex-col md:items-end gap-1 border-t md:border-t-0 pt-3 md:pt-0" style={{borderColor:'#f1f5f9'}}>
+                        <p className="text-xl font-black" style={{color:'#0f4c5c'}}>₩{(Number(r.price)||0).toLocaleString()}</p>
+                        <div className="flex gap-2">
+                          <button onClick={() => {
+                            setFormData({ date:r.date, room:r.room, name:r.name, phone:r.phone||'010',
+                              adults:r.adults||0, kids:r.kids||0, bbq:r.bbq||false,
+                              nights:r.nights||1, memo:r.memo||'', path:r.path||'직접' });
+                            setEditTarget(r.id); setIsManualPrice(false); setManualPrice('');
+                            setManualPriceMode('total'); setRoomTouched(true); setIsModalOpen(true);
+                          }} className="font-black text-[10px] px-3 py-1.5 rounded-lg transition-all"
+                            style={{background:'#f0fdfa', color:'#0d9488'}}
+                            onMouseEnter={e=>{e.target.style.background='#0d9488';e.target.style.color='white'}}
+                            onMouseLeave={e=>{e.target.style.background='#f0fdfa';e.target.style.color='#0d9488'}}>수정</button>
+                          <button onClick={() => handleDelete(r.id)}
+                            className="font-black text-[10px] px-3 py-1.5 rounded-lg transition-all"
+                            style={{background:'#fff1f2', color:'#f43f5e'}}
+                            onMouseEnter={e=>{e.target.style.background='#f43f5e';e.target.style.color='white'}}
+                            onMouseLeave={e=>{e.target.style.background='#fff1f2';e.target.style.color='#f43f5e'}}>삭제</button>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex justify-between items-center md:flex-col md:items-end gap-1 border-t md:border-t-0 pt-3 md:pt-0">
-                      <p className="text-xl font-black text-slate-900">₩{(Number(r.price)||0).toLocaleString()}</p>
-                      <div className="flex gap-2">
-                        <button onClick={() => {
-                          setFormData({ date:r.date, room:r.room, name:r.name, phone:r.phone||'010',
-                            adults:r.adults||0, kids:r.kids||0, bbq:r.bbq||false,
-                            nights:r.nights||1, memo:r.memo||'', path:r.path||'직접' });
-                          setEditTarget(r.id); setIsManualPrice(false); setManualPrice('');
-                          setManualPriceMode('total'); setRoomTouched(true); setIsModalOpen(true);
-                        }} className="text-blue-600 font-black text-[10px] px-3 py-1.5 bg-blue-50 rounded-lg hover:bg-blue-600 hover:text-white transition-all">수정</button>
-                        <button onClick={() => handleDelete(r.id)}
-                          className="text-rose-500 font-black text-[10px] px-3 py-1.5 bg-rose-50 rounded-lg hover:bg-rose-500 hover:text-white transition-all">삭제</button>
-                      </div>
-                    </div>
-                  </div>
-                )) : <div className="p-20 text-center text-slate-400 font-bold text-sm bg-white rounded-2xl border-2 border-dashed">검색 결과가 없습니다.</div>}
+                  );
+                }) : <div className="p-20 text-center font-bold text-sm rounded-2xl border-2 border-dashed" style={{color:'#94a3b8', borderColor:'#e2e8f0', background:'white'}}>검색 결과가 없습니다.</div>}
               </div>
             </div>
           )}
@@ -1027,39 +1098,42 @@ export default function App() {
                 a.download = 'shellbeach_' + new Date().toISOString().slice(0,10) + '.csv';
                 a.click();
               }}
-                className="w-full flex items-center justify-center gap-2 p-4 bg-slate-800 text-white rounded-2xl font-bold hover:bg-slate-700 transition-all">
+                className="w-full flex items-center justify-center gap-2 p-4 font-bold rounded-2xl text-white transition-all"
+                style={{background:'linear-gradient(135deg,#0f4c5c,#0d9488)', boxShadow:'0 4px 16px rgba(13,148,136,0.3)'}}>
                 <Download size={18} /> 전체 예약 CSV 내보내기 ({reservations.length}건)
               </button>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
-                <div className="bg-slate-900 p-8 rounded-[1.5rem] text-white shadow-xl relative overflow-hidden">
+                <div className="p-8 rounded-2xl text-white relative overflow-hidden"
+                  style={{background:'linear-gradient(135deg,#0f4c5c,#0d9488)', boxShadow:'0 8px 32px rgba(15,76,92,0.25)'}}>
                   <div className="absolute -right-4 -top-4 opacity-10"><Wallet size={100} /></div>
-                  <p className="text-blue-300 font-bold text-xs">{viewDate.getFullYear()} 누적 총 매출</p>
+                  <p className="font-bold text-xs" style={{color:'rgba(255,255,255,0.7)'}}>{viewDate.getFullYear()} 누적 총 매출</p>
                   <p className="text-3xl font-black mt-2">₩{Object.entries(stats.monthlyMap).filter(([k])=>k.startsWith(String(viewDate.getFullYear()))).reduce((s,[,v])=>s+v.total,0).toLocaleString()}</p>
                 </div>
-                <div className="bg-white p-8 rounded-[1.5rem] border border-slate-200 shadow-sm relative overflow-hidden">
+                <div className="p-8 rounded-2xl relative overflow-hidden"
+                  style={{background:'white', boxShadow:'0 4px 16px rgba(15,76,92,0.08)'}}>
                   <div className="absolute -right-4 -top-4 opacity-5"><Users size={100} /></div>
-                  <p className="text-slate-500 font-bold text-xs">총 예약 건수</p>
-                  <p className="text-3xl font-black mt-2 text-slate-800">{stats.count}건</p>
+                  <p className="font-bold text-xs" style={{color:'#94a3b8'}}>총 예약 건수</p>
+                  <p className="text-3xl font-black mt-2" style={{color:'#0f4c5c'}}>{stats.count}건</p>
                 </div>
               </div>
-              <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-200 overflow-x-auto shadow-sm">
+              <div className="p-6 md:p-8 rounded-2xl overflow-x-auto" style={{background:'white', boxShadow:'0 4px 16px rgba(15,76,92,0.08)'}}>
                 <div className="flex items-center justify-between mb-6">
-                  <h4 className="font-black text-lg flex items-center gap-2">
-                    <TableProperties className="text-blue-600" size={18} /> {viewDate.getFullYear()}년 월별 매출
+                  <h4 className="font-black text-lg flex items-center gap-2" style={{color:'#0f4c5c'}}>
+                    <TableProperties style={{color:'#0d9488'}} size={18} /> {viewDate.getFullYear()}년 월별 매출
                   </h4>
-                  <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                  <div className="flex gap-1 p-1 rounded-xl" style={{background:'#f0fdfa'}}>
                     <button onClick={() => setViewDate(new Date(viewDate.getFullYear()-1, viewDate.getMonth(), 1))}
-                      className="p-1.5 hover:bg-white rounded-lg"><ChevronLeft size={16} /></button>
-                    <span className="px-3 text-sm font-black text-slate-700 self-center">{viewDate.getFullYear()}</span>
+                      className="p-1.5 rounded-lg" style={{color:'#0d9488'}}><ChevronLeft size={16} /></button>
+                    <span className="px-3 text-sm font-black self-center" style={{color:'#0f4c5c'}}>{viewDate.getFullYear()}</span>
                     <button onClick={() => setViewDate(new Date(viewDate.getFullYear()+1, viewDate.getMonth(), 1))}
-                      className="p-1.5 hover:bg-white rounded-lg"><ChevronRight size={16} /></button>
+                      className="p-1.5 rounded-lg" style={{color:'#0d9488'}}><ChevronRight size={16} /></button>
                   </div>
                 </div>
                 <table className="w-full text-left min-w-[520px]">
                   <thead>
-                    <tr className="border-b-2 border-slate-100 text-slate-400 text-[11px] font-black uppercase">
+                    <tr className="text-[11px] font-black uppercase" style={{borderBottom:'2px solid #f0fdfa', color:'#94a3b8'}}>
                       <th className="py-4 pl-4">월</th><th>Shell</th><th>Beach</th><th>Pine</th>
-                      <th className="py-4 pr-4 text-slate-900 text-right">합계</th>
+                      <th className="py-4 pr-4 text-right" style={{color:'#0f4c5c'}}>합계</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs">
@@ -1067,12 +1141,12 @@ export default function App() {
                       const ym = `${viewDate.getFullYear()}-${String(i+1).padStart(2,'0')}`;
                       const s = stats.monthlyMap[ym] || { Shell:0, Beach:0, Pine:0, total:0 };
                       return (
-                        <tr key={i} className={`border-b border-slate-50 hover:bg-slate-50 ${s.total===0?'opacity-20':''}`}>
-                          <td className="py-4 pl-4 font-bold text-slate-700">{i+1}월</td>
-                          <td>₩{s.Shell.toLocaleString()}</td>
-                          <td>₩{s.Beach.toLocaleString()}</td>
-                          <td>₩{s.Pine.toLocaleString()}</td>
-                          <td className="pr-4 font-black text-blue-600 text-right">₩{s.total.toLocaleString()}</td>
+                        <tr key={i} className="transition-all" style={{borderBottom:'1px solid #f8fafc', opacity: s.total===0?0.2:1}}>
+                          <td className="py-4 pl-4 font-bold" style={{color:'#334155'}}>{i+1}월</td>
+                          <td style={{color:'#64748b'}}>₩{s.Shell.toLocaleString()}</td>
+                          <td style={{color:'#64748b'}}>₩{s.Beach.toLocaleString()}</td>
+                          <td style={{color:'#64748b'}}>₩{s.Pine.toLocaleString()}</td>
+                          <td className="pr-4 font-black text-right" style={{color:'#0d9488'}}>₩{s.total.toLocaleString()}</td>
                         </tr>
                       );
                     })}
@@ -1099,37 +1173,44 @@ export default function App() {
         </div>
       </main>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 flex items-center justify-around px-2 py-1 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around px-2 py-1"
+        style={{background:'white', borderTop:'1px solid rgba(15,76,92,0.1)', boxShadow:'0 -4px 20px rgba(15,76,92,0.08)'}}>
         {NAV_ITEMS.map(item => (
           <button key={item.id} onClick={() => setActiveTab(item.id)}
-            className={`flex flex-col items-center justify-center gap-1 flex-1 py-2 rounded-xl transition-all
-              ${activeTab===item.id?'text-blue-600':'text-slate-400'}`}>
-            <item.icon size={22} strokeWidth={activeTab===item.id?2.5:1.8} />
-            <span className={`text-[10px] font-black ${activeTab===item.id?'text-blue-600':'text-slate-400'}`}>{item.label}</span>
+            className="flex flex-col items-center justify-center gap-1 flex-1 py-2 rounded-xl transition-all">
+            <item.icon size={22} strokeWidth={activeTab===item.id?2.5:1.8}
+              style={{color: activeTab===item.id?'#0d9488':'#94a3b8'}} />
+            <span className="text-[10px] font-black" style={{color: activeTab===item.id?'#0d9488':'#94a3b8'}}>{item.label}</span>
           </button>
         ))}
       </nav>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4"
+          style={{background:'rgba(15,76,92,0.5)', backdropFilter:'blur(8px)'}}
           onClick={resetModal}>
-          <div className="bg-white w-full max-w-xl rounded-[2rem] p-6 md:p-8 relative overflow-y-auto max-h-[92vh] shadow-2xl"
+          <div className="w-full max-w-xl rounded-2xl p-6 md:p-8 relative overflow-y-auto max-h-[92vh]"
+            style={{background:'white', boxShadow:'0 32px 80px rgba(15,76,92,0.25)'}}
             onClick={e => e.stopPropagation()}>
             <button onClick={resetModal}
-              className="absolute top-5 right-5 p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-rose-500 hover:text-white transition-all">
+              className="absolute top-5 right-5 p-2 rounded-full transition-all"
+              style={{background:'#f1f5f9', color:'#64748b'}}
+              onMouseEnter={e=>{e.currentTarget.style.background='#f43f5e';e.currentTarget.style.color='white'}}
+              onMouseLeave={e=>{e.currentTarget.style.background='#f1f5f9';e.currentTarget.style.color='#64748b'}}>
               <X size={18} />
             </button>
 
             <div className="mb-5">
-              <h3 className="text-2xl font-black text-slate-900">{formData.date}</h3>
+              <h3 className="text-2xl font-black" style={{color:'#0f4c5c'}}>{formData.date}</h3>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <p className="text-blue-600 font-bold text-[10px] tracking-widest uppercase">Daily Reservation View</p>
+                <p className="font-bold text-[10px] tracking-widest uppercase" style={{color:'#0d9488'}}>Daily Reservation View</p>
                 {(() => {
                   const hName = rateConfig.holidayNames?.[formData.date];
                   const isHol = new Set(rateConfig.holidays||[]).has(formData.date);
                   if (!isHol) return null;
                   return (
-                    <span className="px-2.5 py-0.5 bg-rose-100 text-rose-600 font-black text-[10px] rounded-full">
+                    <span className="px-2.5 py-0.5 font-black text-[10px] rounded-full"
+                      style={{background:'#fff1f2', color:'#f43f5e'}}>
                       🎌 {hName || '공휴일'}
                     </span>
                   );
@@ -1146,13 +1227,15 @@ export default function App() {
                       const dayPrice = Math.round(((Number(sel.price)||0) - selExtra) / (sel.nights||1));
                       const extraCard = nightIdx === 0 ? selExtra : 0;
                       return (
-                        <span className="px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-black">
+                        <span className="px-3 py-1.5 rounded-full text-xs font-black text-white"
+                          style={{background:'linear-gradient(135deg,#0d9488,#0f4c5c)'}}>
                           {sel.name}님 · ₩{(dayPrice + extraCard).toLocaleString()} ({nightIdx+1}박째)
                         </span>
                       );
                     })()
                   ) : (
-                    <span className="px-3 py-1.5 bg-slate-900 text-white rounded-full text-xs font-black">
+                    <span className="px-3 py-1.5 rounded-full text-xs font-black text-white"
+                      style={{background:'#0f4c5c'}}>
                       합계 · ₩{(reservationMap[formData.date]||[]).reduce((s,r) => {
                           const nightIdx = Math.round((new Date(formData.date+'T00:00:00') - new Date(r.date+'T00:00:00')) / 86400000);
                           const rExtra = (r.adults||0)*20000 + (r.kids||0)*15000 + (r.bbq?30000:0);
@@ -1164,7 +1247,8 @@ export default function App() {
                   )}
                   {selectedResId && (
                     <button onClick={() => { setSelectedResId(null); setEditTarget(null); }}
-                      className="px-3 py-1.5 bg-slate-100 text-slate-500 rounded-full text-xs font-bold hover:bg-slate-200 transition-all">
+                      className="px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+                      style={{background:'#f1f5f9', color:'#64748b'}}>
                       전체보기
                     </button>
                   )}
@@ -1176,6 +1260,7 @@ export default function App() {
               {(reservationMap[formData.date]||[]).length > 0 ? (
                 reservationMap[formData.date].map((r,i) => {
                   const isSelected = selectedResId === r.id;
+                  const rc = {Shell:{accent:'#f43f5e',bg:'#fff1f2',border:'#fecdd3'}, Beach:{accent:'#0ea5e9',bg:'#f0f9ff',border:'#bae6fd'}, Pine:{accent:'#22c55e',bg:'#f0fdf4',border:'#bbf7d0'}}[r.room]||{accent:'#94a3b8',bg:'#f8fafc',border:'#e2e8f0'};
                   return (
                     <div key={`${r.id}-${i}`}
                       onClick={() => {
@@ -1191,15 +1276,18 @@ export default function App() {
                           setIsManualPrice(false); setManualPrice(''); setManualPriceMode('total'); setRoomTouched(true);
                         }
                       }}
-                      className={`p-4 rounded-2xl border cursor-pointer transition-all shadow-sm
-                        ${isSelected ? 'ring-2 ring-blue-500 shadow-md' : 'hover:shadow-md'}
-                        ${ROOMS.find(rm=>rm.id===r.room)?.color||'bg-slate-50'}`}>
+                      className="p-4 rounded-2xl cursor-pointer transition-all"
+                      style={{
+                        background: rc.bg,
+                        border: `1.5px solid ${isSelected ? rc.accent : rc.border}`,
+                        boxShadow: isSelected ? `0 4px 16px ${rc.accent}30` : '0 1px 4px rgba(0,0,0,0.04)'
+                      }}>
                       <div className="flex justify-between items-start">
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-black text-base">{r.room}</span>
-                            <span className="font-bold text-sm text-slate-600">{r.name}님</span>
-                            <span className="font-black text-sm text-slate-800">
+                            <span className="font-black text-base" style={{color:rc.accent}}>{r.room}</span>
+                            <span className="font-bold text-sm" style={{color:'#334155'}}>{r.name}님</span>
+                            <span className="font-black text-sm" style={{color:'#0f4c5c'}}>
                               ₩{(() => {
                                 const nightIdx = Math.round((new Date(formData.date+'T00:00:00') - new Date(r.date+'T00:00:00')) / 86400000);
                                 const rExtra = (r.adults||0)*20000 + (r.kids||0)*15000 + (r.bbq?30000:0);
@@ -1209,23 +1297,26 @@ export default function App() {
                               })()}
                             </span>
                           </div>
-                          <div className="text-[10px] font-bold mt-1.5 opacity-70 flex items-center gap-2 flex-wrap">
+                          <div className="text-[10px] font-bold mt-1.5 flex items-center gap-2 flex-wrap" style={{color:'#94a3b8'}}>
                             {r.phone && (
                               <a href={`tel:${r.phone}`} onClick={e => e.stopPropagation()}
-                                className="text-blue-600 underline flex items-center gap-1">
+                                className="underline flex items-center gap-1" style={{color:rc.accent}}>
                                 <Phone size={10}/>{formatPhone(r.phone)}
                               </a>
                             )}
                             <span>{r.nights}박</span>
                             {r.adults > 0 && <span>성인 {r.adults}</span>}
                             {r.kids > 0 && <span>아동 {r.kids}</span>}
-                            {r.path && <span className="bg-white/60 px-2 py-0.5 rounded-full">{r.path}</span>}
+                            {r.path && <span className="px-2 py-0.5 rounded-full" style={{background:'rgba(255,255,255,0.7)'}}>{r.path}</span>}
                           </div>
                         </div>
                         {isSelected && (
                           <div className="flex gap-2 ml-2 shrink-0" onClick={e => e.stopPropagation()}>
                             <button onClick={() => handleDelete(r.id)}
-                              className="text-rose-500 p-2 bg-white/70 rounded-xl hover:bg-rose-500 hover:text-white transition-all">
+                              className="p-2 rounded-xl transition-all"
+                              style={{background:'rgba(255,255,255,0.7)', color:'#f43f5e'}}
+                              onMouseEnter={e=>{e.currentTarget.style.background='#f43f5e';e.currentTarget.style.color='white'}}
+                              onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,0.7)';e.currentTarget.style.color='#f43f5e'}}>
                               <Trash2 size={16} />
                             </button>
                           </div>
@@ -1235,14 +1326,15 @@ export default function App() {
                   );
                 })
               ) : (
-                <div className="p-8 bg-slate-50 rounded-2xl text-center font-bold text-slate-400 border-2 border-dashed text-xs">
+                <div className="p-8 rounded-2xl text-center font-bold text-xs border-2 border-dashed"
+                  style={{color:'#94a3b8', borderColor:'#e2e8f0', background:'#fafaf9'}}>
                   등록된 예약 내역이 없습니다.
                 </div>
               )}
             </div>
 
-            <div className="pt-6 border-t-2 border-slate-100">
-              <h4 className="font-black text-md mb-5 text-blue-600 flex items-center gap-2">
+            <div className="pt-6" style={{borderTop:'2px solid #f0fdfa'}}>
+              <h4 className="font-black text-md mb-5 flex items-center gap-2" style={{color:'#0d9488'}}>
                 <PlusCircle size={18} /> {selectedResId ? "예약 수정 (클릭해제 시 신규등록)" : "새 예약 등록"}
               </h4>
               {renderForm(true)}
