@@ -9,7 +9,7 @@ import {
   Calendar, PlusCircle, BarChart3, ChevronLeft,
   ChevronRight, BedDouble, X, Users, Wallet, Trash2,
   Search, Check, TableProperties, Lock, Phone, Settings, Download,
-  Copy, AlertCircle, TrendingUp, List, Ban, CalendarDays, Repeat2
+  Copy, TrendingUp, List, Ban, CalendarDays
 } from 'lucide-react';
 
 // --- 1. 공휴일 및 요금 로직 ---
@@ -446,7 +446,6 @@ export default function App() {
   const [manualPriceMode, setManualPriceMode] = useState('total');
   const [roomTouched, setRoomTouched] = useState(false);
   const [calendarView, setCalendarView] = useState('month'); // 'month' | 'week' | 'year'
-  const [searchFilter, setSearchFilter] = useState('all'); // 'all' | 'nophone'
   const [blockDates, setBlockDates] = useState({}); // { 'YYYY-MM-DD': { Shell, Beach, Pine } }
   const [formData, setFormData] = useState({
     date: getLocalTodayStr(), room:'Shell', name:'', phone:'010',
@@ -540,8 +539,6 @@ export default function App() {
     const monthlyMap = {};
     const monthlyNights = {};
     const pathMap = {};
-    const nameCount = {}; // 재방문 감지
-    const phoneCount = {};
     const roomNightTotal = { Shell:0, Beach:0, Pine:0 };
     const roomRevTotal = { Shell:0, Beach:0, Pine:0 };
     reservations.forEach(r => {
@@ -549,9 +546,6 @@ export default function App() {
       const totalP = Number(r.price) || 0;
       const perNight = Math.round(totalP / r.nights);
       revenue += totalP;
-      // 재방문
-      if (r.name) nameCount[r.name] = (nameCount[r.name]||0) + 1;
-      if (r.phone && r.phone !== '010') phoneCount[r.phone] = (phoneCount[r.phone]||0) + 1;
       // 경로별
       const path = r.path || '기타';
       if (!pathMap[path]) pathMap[path] = { revenue:0, count:0 };
@@ -575,9 +569,7 @@ export default function App() {
       Beach: roomNightTotal.Beach > 0 ? Math.round(roomRevTotal.Beach / roomNightTotal.Beach) : 0,
       Pine:  roomNightTotal.Pine  > 0 ? Math.round(roomRevTotal.Pine  / roomNightTotal.Pine)  : 0,
     };
-    const revisitNames = new Set(Object.entries(nameCount).filter(([,v])=>v>=2).map(([k])=>k));
-    const revisitPhones = new Set(Object.entries(phoneCount).filter(([,v])=>v>=2).map(([k])=>k));
-    return { revenue, count:reservations.length, monthlyMap, monthlyNights, pathMap, avgPrice, revisitNames, revisitPhones };
+    return { revenue, count:reservations.length, monthlyMap, monthlyNights, pathMap, avgPrice };
   }, [reservations]);
 
   const getPricePerNight = React.useCallback((room, dateStr) =>
@@ -604,13 +596,12 @@ export default function App() {
 
   const filteredReservations = useMemo(() => {
     let list = [...reservations].sort((a,b) => a.date?.localeCompare(b.date));
-    if (searchFilter === 'nophone') list = list.filter(r => !r.phone || r.phone === '010');
     if (searchTerm) {
       const s = searchTerm.toLowerCase();
       list = list.filter(r => r.name?.includes(s) || r.phone?.includes(s));
     }
     return list;
-  }, [reservations, searchTerm, searchFilter]);
+  }, [reservations, searchTerm]);
 
   const resetModal = () => {
     setIsModalOpen(false); setEditTarget(null); setSelectedResId(null);
@@ -1291,7 +1282,6 @@ export default function App() {
                 <div className="space-y-2">
                   {upcoming.map(r => {
                     const rc = {Shell:{accent:'#f43f5e',bg:'#fff1f2'},Beach:{accent:'#0ea5e9',bg:'#f0f9ff'},Pine:{accent:'#22c55e',bg:'#f0fdf4'}}[r.room]||{accent:'#94a3b8',bg:'#f8fafc'};
-                    const isRevisit = stats.revisitNames.has(r.name) || (r.phone && r.phone !== '010' && stats.revisitPhones.has(r.phone));
                     const checkout = addDays(r.date, r.nights||1);
                     const daysUntil = Math.ceil((new Date(r.date+'T00:00:00') - new Date(today+'T00:00:00')) / 86400000);
                     return (
@@ -1309,7 +1299,6 @@ export default function App() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-black text-sm" style={{color:'#0f4c5c'}}>{r.name}님</span>
-                            {isRevisit && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={{background:'#fef3c7',color:'#d97706'}}><Repeat2 size={8}/>재방문</span>}
                             {r.bbq && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full" style={{background:'#fff7ed',color:'#f97316'}}>🔥BBQ</span>}
                           </div>
                           <div className="text-[10px] font-bold mt-0.5" style={{color:'#94a3b8'}}>
@@ -1333,7 +1322,6 @@ export default function App() {
                     <div className="space-y-2">
                       {past.map(r => {
                         const rc = {Shell:{accent:'#f43f5e',bg:'#fff1f2'},Beach:{accent:'#0ea5e9',bg:'#f0f9ff'},Pine:{accent:'#22c55e',bg:'#f0fdf4'}}[r.room]||{accent:'#94a3b8',bg:'#f8fafc'};
-                        const isRevisit = stats.revisitNames.has(r.name) || (r.phone && r.phone !== '010' && stats.revisitPhones.has(r.phone));
                         return (
                           <div key={r.id} className="p-4 rounded-2xl flex items-center gap-3 opacity-60"
                             style={{background:'white', boxShadow:'0 1px 4px rgba(15,76,92,0.04)', borderLeft:`3px solid #e2e8f0`}}>
@@ -1342,7 +1330,6 @@ export default function App() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <span className="font-black text-sm" style={{color:'#334155'}}>{r.name}님</span>
-                                {isRevisit && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={{background:'#fef3c7',color:'#d97706'}}><Repeat2 size={8}/>재방문</span>}
                               </div>
                               <div className="text-[10px] font-bold" style={{color:'#94a3b8'}}>{r.date} · {r.nights}박</div>
                             </div>
@@ -1381,22 +1368,7 @@ export default function App() {
                     onBlur={e => e.target.style.borderColor='#e2e8f0'}
                     value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
-                {/* 전화번호 미입력 필터 */}
-                <button onClick={() => setSearchFilter(f => f==='nophone'?'all':'nophone')}
-                  className="px-4 py-2 rounded-2xl font-black text-xs flex items-center gap-1.5 transition-all"
-                  style={{
-                    background: searchFilter==='nophone' ? '#f43f5e' : 'white',
-                    color: searchFilter==='nophone' ? 'white' : '#f43f5e',
-                    border: '2px solid #fecdd3'
-                  }}>
-                  <AlertCircle size={14}/> 번호없음
-                </button>
               </div>
-              {searchFilter==='nophone' && (
-                <div className="px-4 py-2 rounded-xl text-xs font-bold" style={{background:'#fff1f2', color:'#f43f5e'}}>
-                  전화번호 미입력 예약 {filteredReservations.length}건 표시 중
-                </div>
-              )}
               <div className="space-y-3">
                 {filteredReservations.length > 0 ? filteredReservations.map(r => {
                   const rc = {Shell:{accent:'#f43f5e',bg:'#fff1f2'}, Beach:{accent:'#0ea5e9',bg:'#f0f9ff'}, Pine:{accent:'#22c55e',bg:'#f0fdf4'}}[r.room]||{accent:'#94a3b8',bg:'#f8fafc'};
@@ -1418,11 +1390,7 @@ export default function App() {
                               style={{background:rc.bg, color:rc.accent}}>
                               <Phone size={11} /> {formatPhone(r.phone)}
                             </a>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 mt-1.5 text-[11px] font-bold px-3 py-1 rounded-full" style={{background:'#fff1f2', color:'#f43f5e'}}>
-                              <AlertCircle size={10}/> 번호 없음
-                            </span>
-                          )}
+                          ) : null}
                           {/* 메모 표시 */}
                           {r.memo && (
                             <div className="mt-2 text-xs font-bold px-3 py-1.5 rounded-xl" style={{background:'#fffbeb', color:'#92400e'}}>
@@ -1501,7 +1469,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 객실 평균단가 + 재방문 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-5 rounded-2xl" style={{background:'white', boxShadow:'0 4px 16px rgba(15,76,92,0.08)'}}>
                   <h4 className="font-black text-sm mb-3 flex items-center gap-2" style={{color:'#0f4c5c'}}>
@@ -1515,22 +1482,6 @@ export default function App() {
                       </span>
                     </div>
                   ))}
-                </div>
-                <div className="p-5 rounded-2xl" style={{background:'white', boxShadow:'0 4px 16px rgba(15,76,92,0.08)'}}>
-                  <h4 className="font-black text-sm mb-3 flex items-center gap-2" style={{color:'#0f4c5c'}}>
-                    <Repeat2 size={14} style={{color:'#f97316'}}/> 재방문 고객
-                  </h4>
-                  {stats.revisitNames.size === 0 ? (
-                    <p className="text-xs font-bold" style={{color:'#94a3b8'}}>재방문 기록 없음</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {[...stats.revisitNames].map(name => (
-                        <span key={name} className="text-xs font-black px-2.5 py-1 rounded-full" style={{background:'#fef3c7', color:'#d97706'}}>
-                          {name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
 
